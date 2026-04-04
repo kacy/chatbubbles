@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kacy/imsg-bridge/internal/api"
+	"github.com/kacy/imsg-bridge/internal/attachment"
 	"github.com/kacy/imsg-bridge/internal/auth"
 	"github.com/kacy/imsg-bridge/internal/buildinfo"
 	"github.com/kacy/imsg-bridge/internal/ctlsock"
@@ -65,6 +66,7 @@ func main() {
 		log.Fatal(err)
 	}
 	authService := auth.NewService(stateStore, auth.NewTokenManager(identity))
+	attachmentService := attachment.NewService(identity.PrivateKey, filepath.Join(dataDir, "tmp"))
 	webhookValidator := webhook.NewValidator()
 	webhookService := webhook.NewService(stateStore, webhookValidator)
 	webhookDispatcher := webhook.NewDispatcher(stateStore, webhookValidator)
@@ -73,7 +75,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	handler := api.NewServer(cfg, runner, hub, authService, webhookService)
+	handler := api.NewServer(cfg, runner, hub, authService, webhookService, attachmentService)
 	controlServer := ctlsock.New(socketPath, authService, func(ctx context.Context) (ctlsock.Status, error) {
 		imsgVersion, err := runner.Version(ctx)
 		if err != nil {

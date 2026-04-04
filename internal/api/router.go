@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kacy/imsg-bridge/internal/attachment"
 	"github.com/kacy/imsg-bridge/internal/auth"
 	"github.com/kacy/imsg-bridge/internal/events"
 	"github.com/kacy/imsg-bridge/internal/imsg"
@@ -29,26 +30,29 @@ type Runner interface {
 	ListChats(ctx context.Context, limit int) ([]imsg.Chat, error)
 	ListMessages(ctx context.Context, chatID int64, opts imsg.ListMessagesOptions) ([]imsg.Message, error)
 	SendMessage(ctx context.Context, req imsg.SendMessageRequest) (imsg.SendMessageResult, error)
+	SendAttachment(ctx context.Context, req imsg.SendAttachmentRequest) (imsg.SendAttachmentResult, error)
 }
 
 type Server struct {
-	cfg      Config
-	auth     Authenticator
-	pairing  *auth.Service
-	hub      *events.Hub
-	limiter  *rateLimiter
-	runner   Runner
-	webhooks WebhookService
+	cfg         Config
+	auth        Authenticator
+	pairing     *auth.Service
+	hub         *events.Hub
+	limiter     *rateLimiter
+	runner      Runner
+	webhooks    WebhookService
+	attachments *attachment.Service
 }
 
-func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service, webhooks WebhookService) http.Handler {
+func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service, webhooks WebhookService, attachments *attachment.Service) http.Handler {
 	s := &Server{
-		cfg:      cfg,
-		pairing:  pairing,
-		hub:      hub,
-		limiter:  newRateLimiter(),
-		runner:   runner,
-		webhooks: webhooks,
+		cfg:         cfg,
+		pairing:     pairing,
+		hub:         hub,
+		limiter:     newRateLimiter(),
+		runner:      runner,
+		webhooks:    webhooks,
+		attachments: attachments,
 	}
 	if pairing != nil {
 		s.auth = pairing
@@ -71,6 +75,8 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service
 	mux.HandleFunc("GET /v1/chats", s.requireAuth("read", "read", s.handleChats))
 	mux.HandleFunc("GET /v1/chats/{id}/messages", s.requireAuth("read", "read", s.handleMessages))
 	mux.HandleFunc("POST /v1/messages", s.requireAuth("send", "send", s.handleSendMessage))
+	mux.HandleFunc("POST /v1/attachments", s.requireAuth("attach", "attach", s.handleSendAttachment))
+	mux.HandleFunc("GET /v1/attachments/{id}", s.requireAuth("read", "read", s.handleGetAttachment))
 	mux.HandleFunc("GET /v1/events", s.requireAuth("read", "read", s.handleEvents))
 
 	return s.logRequests(s.withCORS(mux))
@@ -165,6 +171,9 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, statusForErr(err), "internal", err.Error())
 		return
+	}
+	if s.attachments != nil {
+		s.attachments.DecorateMessages(messages)
 	}
 
 	writeJSON(w, http.StatusOK, map[string][]imsg.Message{"messages": messages})

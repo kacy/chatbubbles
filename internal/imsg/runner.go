@@ -92,9 +92,11 @@ func (r *Runner) SendMessage(ctx context.Context, req SendMessageRequest) (SendM
 	args := []string{
 		"send",
 		"--to", req.To,
-		"--text", req.Text,
 		"--service", req.Service,
 		"--json",
+	}
+	if strings.TrimSpace(req.Text) != "" {
+		args = append(args, "--text", req.Text)
 	}
 
 	out, err := r.run(ctx, args...)
@@ -118,6 +120,48 @@ func (r *Runner) SendMessage(ctx context.Context, req SendMessageRequest) (SendM
 		}
 		if parsed.Service != "" {
 			result.Service = parsed.Service
+		}
+	}
+
+	return result, nil
+}
+
+func (r *Runner) SendAttachment(ctx context.Context, req SendAttachmentRequest) (SendAttachmentResult, error) {
+	args := []string{
+		"send",
+		"--to", req.To,
+		"--file", req.FilePath,
+		"--service", req.Service,
+		"--json",
+	}
+	if strings.TrimSpace(req.Text) != "" {
+		args = append(args, "--text", req.Text)
+	}
+
+	out, err := r.run(ctx, args...)
+	if err != nil {
+		return SendAttachmentResult{}, err
+	}
+
+	result := SendAttachmentResult{
+		Status:  "sent",
+		To:      req.To,
+		Service: req.Service,
+	}
+
+	var parsed SendAttachmentResult
+	if err := json.Unmarshal(bytes.TrimSpace(out), &parsed); err == nil {
+		if parsed.Status != "" {
+			result.Status = parsed.Status
+		}
+		if parsed.To != "" {
+			result.To = parsed.To
+		}
+		if parsed.Service != "" {
+			result.Service = parsed.Service
+		}
+		if parsed.Attachment.Filename != "" || parsed.Attachment.ID != "" {
+			result.Attachment = parsed.Attachment
 		}
 	}
 

@@ -14,11 +14,10 @@ today, `imsg-bridge` supports:
 - a websocket event stream backed by `imsg watch`
 - local admin over a unix socket with `imsg-bridge-cli`
 - webhook registration and delivery
-- api-based message sending
+- api-based message and attachment sending
 
 still landing:
 
-- attachment upload and download
 - a more polished install story for running it as a background service
 
 ## what you need
@@ -92,6 +91,8 @@ main endpoints:
 - `POST /v1/sessions/{id}/approve`
 - `GET /v1/events`
 - `POST /v1/messages`
+- `POST /v1/attachments`
+- `GET /v1/attachments/{id}`
 - `GET /v1/webhooks`
 - `POST /v1/webhooks`
 - `DELETE /v1/webhooks/{id}`
@@ -110,6 +111,16 @@ example webhook list request:
 ```sh
 curl -sk https://127.0.0.1:8443/v1/webhooks \
   -H "Authorization: Bearer $TOKEN"
+```
+
+example attachment send request:
+
+```sh
+curl -sk https://127.0.0.1:8443/v1/attachments \
+  -H "Authorization: Bearer $TOKEN" \
+  -F to=+15551234567 \
+  -F text='photo attached' \
+  -F file=@./photo.jpg
 ```
 
 webhook targets must use `https://` and cannot resolve to loopback, private, link-local, or metadata addresses.
