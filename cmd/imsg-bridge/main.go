@@ -20,6 +20,7 @@ import (
 	"github.com/kacy/imsg-bridge/internal/imsg"
 	"github.com/kacy/imsg-bridge/internal/store"
 	bridgetls "github.com/kacy/imsg-bridge/internal/tls"
+	"github.com/kacy/imsg-bridge/internal/webhook"
 )
 
 const version = "0.1.0"
@@ -63,12 +64,15 @@ func main() {
 		log.Fatal(err)
 	}
 	authService := auth.NewService(stateStore, auth.NewTokenManager(identity))
+	webhookValidator := webhook.NewValidator()
+	webhookService := webhook.NewService(stateStore, webhookValidator)
+	webhookDispatcher := webhook.NewDispatcher(stateStore, webhookValidator)
 	bootstrapCode, err := authService.EnsureBootstrap(cfg.ServerName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	handler := api.NewServer(cfg, runner, hub, authService)
+	handler := api.NewServer(cfg, runner, hub, authService, webhookService)
 	controlServer := ctlsock.New(socketPath, authService, func(ctx context.Context) (ctlsock.Status, error) {
 		imsgVersion, err := runner.Version(ctx)
 		if err != nil {
@@ -115,6 +119,10 @@ func main() {
 			}
 
 			hub.Publish(events.Event{
+				Type: event.Name(),
+				Data: event.Message,
+			})
+			webhookDispatcher.Dispatch(ctx, events.Event{
 				Type: event.Name(),
 				Data: event.Message,
 			})

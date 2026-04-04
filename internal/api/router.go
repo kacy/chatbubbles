@@ -31,21 +31,23 @@ type Runner interface {
 }
 
 type Server struct {
-	cfg     Config
-	auth    Authenticator
-	pairing *auth.Service
-	hub     *events.Hub
-	limiter *rateLimiter
-	runner  Runner
+	cfg      Config
+	auth     Authenticator
+	pairing  *auth.Service
+	hub      *events.Hub
+	limiter  *rateLimiter
+	runner   Runner
+	webhooks WebhookService
 }
 
-func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service) http.Handler {
+func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service, webhooks WebhookService) http.Handler {
 	s := &Server{
-		cfg:     cfg,
-		pairing: pairing,
-		hub:     hub,
-		limiter: newRateLimiter(),
-		runner:  runner,
+		cfg:      cfg,
+		pairing:  pairing,
+		hub:      hub,
+		limiter:  newRateLimiter(),
+		runner:   runner,
+		webhooks: webhooks,
 	}
 	if pairing != nil {
 		s.auth = pairing
@@ -61,6 +63,9 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service
 	mux.HandleFunc("POST /v1/sessions", s.limitByIP("sessions", 5, time.Minute, s.handleCreateSession))
 	mux.HandleFunc("GET /v1/sessions/{id}", s.handleGetSession)
 	mux.HandleFunc("POST /v1/sessions/{id}/approve", s.requireAuth("send", "send", s.handleApproveSession))
+	mux.HandleFunc("POST /v1/webhooks", s.requireAuth("admin", "read", s.handleCreateWebhook))
+	mux.HandleFunc("GET /v1/webhooks", s.requireAuth("admin", "read", s.handleListWebhooks))
+	mux.HandleFunc("DELETE /v1/webhooks/{id}", s.requireAuth("admin", "read", s.handleDeleteWebhook))
 	mux.HandleFunc("GET /v1/server", s.requireAuth("read", "read", s.handleServer))
 	mux.HandleFunc("GET /v1/chats", s.requireAuth("read", "read", s.handleChats))
 	mux.HandleFunc("GET /v1/chats/{id}/messages", s.requireAuth("read", "read", s.handleMessages))

@@ -24,7 +24,7 @@ func TestHandleServer(t *testing.T) {
 		TailscaleIP: "100.64.0.3",
 	}, stubRunner{
 		version: "0.5.0",
-	}, events.NewHub(), nil)
+	}, events.NewHub(), nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/server", nil)
 	rec := httptest.NewRecorder()
@@ -60,7 +60,7 @@ func TestHandleServer(t *testing.T) {
 func TestHandleChats(t *testing.T) {
 	server := NewServer(Config{}, stubRunner{
 		chats: []imsg.Chat{{ID: 3, Identifier: "+15551234567"}},
-	}, events.NewHub(), nil)
+	}, events.NewHub(), nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/chats?limit=1", nil)
 	rec := httptest.NewRecorder()
@@ -86,7 +86,7 @@ func TestHandleChats(t *testing.T) {
 func TestHandleMessages(t *testing.T) {
 	server := NewServer(Config{}, stubRunner{
 		messages: []imsg.Message{{ID: 1, ChatID: 7, Text: "hello"}},
-	}, events.NewHub(), nil)
+	}, events.NewHub(), nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/chats/7/messages?limit=1", nil)
 	rec := httptest.NewRecorder()
@@ -126,7 +126,7 @@ func TestSessionEndpoints(t *testing.T) {
 		t.Fatalf("pair client: %v", err)
 	}
 
-	server := NewServer(Config{}, stubRunner{version: "0.5.0"}, events.NewHub(), service)
+	server := NewServer(Config{}, stubRunner{version: "0.5.0"}, events.NewHub(), service, nil)
 
 	createReq := httptest.NewRequest(http.MethodPost, "/v1/sessions", strings.NewReader(`{"client_name":"Chrome","client_type":"web"}`))
 	createRec := httptest.NewRecorder()
@@ -178,7 +178,7 @@ func TestSessionEndpoints(t *testing.T) {
 }
 
 func TestPairEndpointRateLimited(t *testing.T) {
-	server := NewServer(Config{}, stubRunner{}, events.NewHub(), nil)
+	server := NewServer(Config{}, stubRunner{}, events.NewHub(), nil, nil)
 
 	for i := 0; i < 5; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/v1/pair", strings.NewReader(`{"code":"X","client_name":"n","client_type":"android"}`))
@@ -194,6 +194,63 @@ func TestPairEndpointRateLimited(t *testing.T) {
 
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d", rec.Code)
+	}
+}
+
+func TestWebhookEndpoints(t *testing.T) {
+	dataDir := t.TempDir()
+	identity, err := auth.EnsureIdentity(dataDir)
+	if err != nil {
+		t.Fatalf("ensure identity: %v", err)
+	}
+
+	service := auth.NewService(store.New(filepath.Join(dataDir, "config.json")), auth.NewTokenManager(identity))
+	adminCode, err := service.GeneratePairingCode(2*time.Minute, []string{"admin", "read", "send"})
+	if err != nil {
+		t.Fatalf("generate admin code: %v", err)
+	}
+	pairResult, err := service.Pair(context.Background(), adminCode.Code, "admin", "android")
+	if err != nil {
+		t.Fatalf("pair admin client: %v", err)
+	}
+
+	hooks := &stubWebhookService{
+		created: store.Webhook{
+			ID:     "w_123",
+			URL:    "https://example.com/hook",
+			Events: []string{"new_message"},
+		},
+		listed: []store.Webhook{{
+			ID:     "w_123",
+			URL:    "https://example.com/hook",
+			Events: []string{"new_message"},
+		}},
+	}
+
+	server := NewServer(Config{}, stubRunner{}, events.NewHub(), service, hooks)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/webhooks", strings.NewReader(`{"url":"https://example.com/hook","events":["new_message"]}`))
+	createReq.Header.Set("Authorization", "Bearer "+pairResult.Token)
+	createRec := httptest.NewRecorder()
+	server.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 creating webhook, got %d", createRec.Code)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/webhooks", nil)
+	listReq.Header.Set("Authorization", "Bearer "+pairResult.Token)
+	listRec := httptest.NewRecorder()
+	server.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 listing webhooks, got %d", listRec.Code)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/webhooks/w_123", nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+pairResult.Token)
+	deleteRec := httptest.NewRecorder()
+	server.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 deleting webhook, got %d", deleteRec.Code)
 	}
 }
 
@@ -213,4 +270,21 @@ func (s stubRunner) ListChats(context.Context, int) ([]imsg.Chat, error) {
 
 func (s stubRunner) ListMessages(context.Context, int64, imsg.ListMessagesOptions) ([]imsg.Message, error) {
 	return s.messages, nil
+}
+
+type stubWebhookService struct {
+	created store.Webhook
+	listed  []store.Webhook
+}
+
+func (s *stubWebhookService) Create(context.Context, string, []string) (store.Webhook, error) {
+	return s.created, nil
+}
+
+func (s *stubWebhookService) List() ([]store.Webhook, error) {
+	return s.listed, nil
+}
+
+func (s *stubWebhookService) Delete(string) (bool, error) {
+	return true, nil
 }

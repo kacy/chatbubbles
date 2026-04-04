@@ -14,6 +14,7 @@ import (
 type Config struct {
 	ServerName          string            `json:"server_name,omitempty"`
 	Clients             []Client          `json:"clients,omitempty"`
+	Webhooks            []Webhook         `json:"webhooks,omitempty"`
 	PendingPairingCodes []PendingPairCode `json:"pending_pairing_codes,omitempty"`
 	PendingSessions     []PendingSession  `json:"pending_sessions,omitempty"`
 	LastWatchRowID      int64             `json:"last_watch_rowid"`
@@ -46,6 +47,13 @@ type PendingSession struct {
 	ClientID   string    `json:"client_id,omitempty"`
 	Scopes     []string  `json:"scopes,omitempty"`
 	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+type Webhook struct {
+	ID        string    `json:"id"`
+	URL       string    `json:"url"`
+	Events    []string  `json:"events"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Store struct {
@@ -98,6 +106,7 @@ func (s *Store) Update(fn func(*Config) error) (Config, error) {
 	}
 
 	cfg.Clients = slices.Clip(cfg.Clients)
+	cfg.Webhooks = slices.Clip(cfg.Webhooks)
 	cfg.PendingPairingCodes = slices.Clip(cfg.PendingPairingCodes)
 	cfg.PendingSessions = slices.Clip(cfg.PendingSessions)
 
