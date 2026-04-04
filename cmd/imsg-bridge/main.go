@@ -16,6 +16,7 @@ import (
 
 	"github.com/kacy/imsg-bridge/internal/api"
 	"github.com/kacy/imsg-bridge/internal/auth"
+	"github.com/kacy/imsg-bridge/internal/buildinfo"
 	"github.com/kacy/imsg-bridge/internal/ctlsock"
 	"github.com/kacy/imsg-bridge/internal/events"
 	"github.com/kacy/imsg-bridge/internal/imsg"
@@ -23,8 +24,6 @@ import (
 	bridgetls "github.com/kacy/imsg-bridge/internal/tls"
 	"github.com/kacy/imsg-bridge/internal/webhook"
 )
-
-const version = "0.1.0"
 
 func main() {
 	var cfg api.Config
@@ -38,7 +37,7 @@ func main() {
 	flag.StringVar(&socketPath, "socket", "", "control socket path")
 	flag.Parse()
 
-	cfg.Version = version
+	cfg.Version = buildinfo.Version
 	cfg.StartedAt = time.Now().UTC()
 	if cfg.TailscaleIP == "" {
 		cfg.TailscaleIP = detectTailscaleIP()
@@ -88,7 +87,7 @@ func main() {
 
 		return ctlsock.Status{
 			ServerName:     cfg.ServerName,
-			Version:        version,
+			Version:        buildinfo.Version,
 			ImsgVersion:    imsgVersion,
 			TailscaleIP:    cfg.TailscaleIP,
 			PairHost:       pairHost,

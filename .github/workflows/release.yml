@@ -1,0 +1,43 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: verify version
+        run: |
+          version="$(tr -d '\n' < VERSION)"
+          tag="${GITHUB_REF_NAME#v}"
+          test "$version" = "$tag"
+
+      - name: check formatting
+        run: test -z "$(gofmt -l ./cmd ./internal)"
+
+      - name: run tests
+        run: go test ./...
+
+      - name: build release archives
+        run: sh ./scripts/build-release.sh "${GITHUB_REF_NAME#v}"
+
+      - name: publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
