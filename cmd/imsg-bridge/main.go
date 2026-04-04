@@ -15,6 +15,7 @@ import (
 
 	"github.com/kacy/imsg-bridge/internal/api"
 	"github.com/kacy/imsg-bridge/internal/auth"
+	"github.com/kacy/imsg-bridge/internal/ctlsock"
 	"github.com/kacy/imsg-bridge/internal/events"
 	"github.com/kacy/imsg-bridge/internal/imsg"
 	"github.com/kacy/imsg-bridge/internal/store"
@@ -26,17 +27,22 @@ const version = "0.1.0"
 func main() {
 	var cfg api.Config
 	var dataDir string
+	var socketPath string
 
 	flag.StringVar(&cfg.ListenAddr, "listen", ":8443", "http listen address")
 	flag.StringVar(&cfg.ServerName, "server-name", hostname(), "server name")
 	flag.StringVar(&cfg.TailscaleIP, "tailscale-ip", "", "override detected tailscale ip")
 	flag.StringVar(&dataDir, "data-dir", defaultDataDir(), "data directory")
+	flag.StringVar(&socketPath, "socket", "", "control socket path")
 	flag.Parse()
 
 	cfg.Version = version
 	cfg.StartedAt = time.Now().UTC()
 	if cfg.TailscaleIP == "" {
 		cfg.TailscaleIP = detectTailscaleIP()
+	}
+	if socketPath == "" {
+		socketPath = filepath.Join(dataDir, "imsg-bridge.sock")
 	}
 
 	material, err := bridgetls.EnsureMaterial(dataDir, cfg.ServerName, []string{cfg.TailscaleIP, hostname()})
@@ -63,6 +69,27 @@ func main() {
 	}
 
 	handler := api.NewServer(cfg, runner, hub, authService)
+	controlServer := ctlsock.New(socketPath, authService, func(ctx context.Context) (ctlsock.Status, error) {
+		imsgVersion, err := runner.Version(ctx)
+		if err != nil {
+			return ctlsock.Status{}, err
+		}
+
+		clients, err := authService.ListClients()
+		if err != nil {
+			return ctlsock.Status{}, err
+		}
+
+		return ctlsock.Status{
+			ServerName:     cfg.ServerName,
+			Version:        version,
+			ImsgVersion:    imsgVersion,
+			TailscaleIP:    cfg.TailscaleIP,
+			TLSFingerprint: material.Fingerprint,
+			UptimeSeconds:  int64(time.Since(cfg.StartedAt).Seconds()),
+			Clients:        clients,
+		}, nil
+	})
 
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -73,12 +100,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	watcher := imsg.NewWatcher(runner, state.LastWatchRowID)
+	lastWatchRowID := state.LastWatchRowID
+	watcher := imsg.NewWatcher(runner, lastWatchRowID)
 	go func() {
 		err := watcher.Run(ctx, func(event imsg.WatchEvent) {
-			if rowID := event.RowID(); rowID > state.LastWatchRowID {
-				state.LastWatchRowID = rowID
-				if err := stateStore.Save(store.Config{LastWatchRowID: state.LastWatchRowID}); err != nil {
+			if rowID := event.RowID(); rowID > lastWatchRowID {
+				lastWatchRowID = rowID
+				if _, err := stateStore.Update(func(cfg *store.Config) error {
+					cfg.LastWatchRowID = lastWatchRowID
+					return nil
+				}); err != nil {
 					log.Printf("save watch state failed: %v", err)
 				}
 			}
@@ -94,6 +125,12 @@ func main() {
 	}()
 
 	go func() {
+		if err := controlServer.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("control socket exited: %v", err)
+		}
+	}()
+
+	go func() {
 		<-ctx.Done()
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -105,6 +142,7 @@ func main() {
 	}()
 
 	log.Printf("serving https on %s", cfg.ListenAddr)
+	log.Printf("control socket %s", socketPath)
 	log.Printf("tls fingerprint %s", material.Fingerprint)
 	if bootstrapCode != "" {
 		log.Printf("bootstrap pairing code %s", bootstrapCode)

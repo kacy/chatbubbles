@@ -26,4 +26,15 @@ on first boot it creates a self-signed certificate in the data dir and logs the 
 
 the daemon also keeps a tiny `config.json` in the data dir so the watcher can resume from the last seen row id after a restart.
 
-on a fresh boot with no paired clients, the daemon logs a short-lived bootstrap pairing code. exchange that with `POST /v1/pair` to get a bearer token, then use that token for the read api and websocket stream.
+on a fresh boot with no paired clients, the daemon logs a short-lived bootstrap pairing code. after that, use `imsg-bridge-cli pair` over the local control socket to mint more pairing codes without restarting the daemon.
+
+## local admin
+
+the daemon also exposes a unix socket at `~/.local/share/imsg-bridge/imsg-bridge.sock` for local admin commands.
+
+```sh
+imsg-bridge-cli status
+imsg-bridge-cli pair
+imsg-bridge-cli clients
+imsg-bridge-cli revoke c_01example
+```
