@@ -177,6 +177,26 @@ func TestSessionEndpoints(t *testing.T) {
 	}
 }
 
+func TestPairEndpointRateLimited(t *testing.T) {
+	server := NewServer(Config{}, stubRunner{}, events.NewHub(), nil)
+
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/v1/pair", strings.NewReader(`{"code":"X","client_name":"n","client_type":"android"}`))
+		req.RemoteAddr = "100.64.0.2:1234"
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/pair", strings.NewReader(`{"code":"X","client_name":"n","client_type":"android"}`))
+	req.RemoteAddr = "100.64.0.2:1234"
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", rec.Code)
+	}
+}
+
 type stubRunner struct {
 	version  string
 	chats    []imsg.Chat

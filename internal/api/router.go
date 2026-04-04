@@ -35,6 +35,7 @@ type Server struct {
 	auth    Authenticator
 	pairing *auth.Service
 	hub     *events.Hub
+	limiter *rateLimiter
 	runner  Runner
 }
 
@@ -43,6 +44,7 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service
 		cfg:     cfg,
 		pairing: pairing,
 		hub:     hub,
+		limiter: newRateLimiter(),
 		runner:  runner,
 	}
 	if pairing != nil {
@@ -55,14 +57,14 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
-	mux.HandleFunc("POST /v1/pair", s.handlePair)
-	mux.HandleFunc("POST /v1/sessions", s.handleCreateSession)
+	mux.HandleFunc("POST /v1/pair", s.limitByIP("pair", 5, time.Minute, s.handlePair))
+	mux.HandleFunc("POST /v1/sessions", s.limitByIP("sessions", 5, time.Minute, s.handleCreateSession))
 	mux.HandleFunc("GET /v1/sessions/{id}", s.handleGetSession)
-	mux.HandleFunc("POST /v1/sessions/{id}/approve", s.requireAuth("send", s.handleApproveSession))
-	mux.HandleFunc("GET /v1/server", s.requireAuth("read", s.handleServer))
-	mux.HandleFunc("GET /v1/chats", s.requireAuth("read", s.handleChats))
-	mux.HandleFunc("GET /v1/chats/{id}/messages", s.requireAuth("read", s.handleMessages))
-	mux.HandleFunc("GET /v1/events", s.requireAuth("read", s.handleEvents))
+	mux.HandleFunc("POST /v1/sessions/{id}/approve", s.requireAuth("send", "send", s.handleApproveSession))
+	mux.HandleFunc("GET /v1/server", s.requireAuth("read", "read", s.handleServer))
+	mux.HandleFunc("GET /v1/chats", s.requireAuth("read", "read", s.handleChats))
+	mux.HandleFunc("GET /v1/chats/{id}/messages", s.requireAuth("read", "read", s.handleMessages))
+	mux.HandleFunc("GET /v1/events", s.requireAuth("read", "read", s.handleEvents))
 
 	return s.logRequests(mux)
 }
