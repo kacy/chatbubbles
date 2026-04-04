@@ -2,7 +2,7 @@
 
 `imsg-bridge` is an authenticated https api for reading and sending iMessage data over tailscale.
 
-this repo is starting with phase 1: a small daemon, `imsg` subprocess wrappers, and the read-only api surface.
+this repo is starting with phase 1 and phase 2 foundations: a small daemon, self-signed tls, `imsg` subprocess wrappers, and a websocket event stream backed by `imsg watch`.
 
 ## prerequisites
 
@@ -21,3 +21,7 @@ make run
 ```
 
 the server listens on `:8443` by default.
+
+on first boot it creates a self-signed certificate in the data dir and logs the tls fingerprint for pairing clients later.
+
+the daemon also keeps a tiny `config.json` in the data dir so the watcher can resume from the last seen row id after a restart.
