@@ -28,6 +28,8 @@ the daemon also keeps a tiny `config.json` in the data dir so the watcher can re
 
 on a fresh boot with no paired clients, the daemon logs a short-lived bootstrap pairing code. after that, use `imsg-bridge-cli pair` over the local control socket to mint more pairing codes without restarting the daemon.
 
+`imsg-bridge-cli pair` now prints the code, the pinned tls fingerprint, and a terminal qr payload that direct clients can scan.
+
 web clients can also use the delegated session flow:
 
 ```sh

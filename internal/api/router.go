@@ -73,7 +73,7 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service
 	mux.HandleFunc("POST /v1/messages", s.requireAuth("send", "send", s.handleSendMessage))
 	mux.HandleFunc("GET /v1/events", s.requireAuth("read", "read", s.handleEvents))
 
-	return s.logRequests(mux)
+	return s.logRequests(s.withCORS(mux))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

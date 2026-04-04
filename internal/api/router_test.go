@@ -297,6 +297,23 @@ func TestWebhookEndpoints(t *testing.T) {
 	}
 }
 
+func TestCORSPreflight(t *testing.T) {
+	server := NewServer(Config{}, stubRunner{}, events.NewHub(), nil, nil)
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/server", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
+		t.Fatalf("unexpected allow-origin header %q", got)
+	}
+}
+
 type stubRunner struct {
 	version    string
 	chats      []imsg.Chat

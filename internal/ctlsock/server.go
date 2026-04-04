@@ -29,6 +29,7 @@ type Status struct {
 	Version        string         `json:"version"`
 	ImsgVersion    string         `json:"imsg_version"`
 	TailscaleIP    string         `json:"tailscale_ip,omitempty"`
+	PairHost       string         `json:"pair_host,omitempty"`
 	TLSFingerprint string         `json:"tls_fingerprint,omitempty"`
 	UptimeSeconds  int64          `json:"uptime_seconds"`
 	Clients        []store.Client `json:"clients,omitempty"`
