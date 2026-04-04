@@ -88,6 +88,42 @@ func (r *Runner) ListMessages(ctx context.Context, chatID int64, opts ListMessag
 	return messages, nil
 }
 
+func (r *Runner) SendMessage(ctx context.Context, req SendMessageRequest) (SendMessageResult, error) {
+	args := []string{
+		"send",
+		"--to", req.To,
+		"--text", req.Text,
+		"--service", req.Service,
+		"--json",
+	}
+
+	out, err := r.run(ctx, args...)
+	if err != nil {
+		return SendMessageResult{}, err
+	}
+
+	result := SendMessageResult{
+		Status:  "sent",
+		To:      req.To,
+		Service: req.Service,
+	}
+
+	var parsed SendMessageResult
+	if err := json.Unmarshal(bytes.TrimSpace(out), &parsed); err == nil {
+		if parsed.Status != "" {
+			result.Status = parsed.Status
+		}
+		if parsed.To != "" {
+			result.To = parsed.To
+		}
+		if parsed.Service != "" {
+			result.Service = parsed.Service
+		}
+	}
+
+	return result, nil
+}
+
 const timeLayout = "2006-01-02T15:04:05Z07:00"
 
 func (r *Runner) run(ctx context.Context, args ...string) ([]byte, error) {

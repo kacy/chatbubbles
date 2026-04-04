@@ -197,6 +197,49 @@ func TestPairEndpointRateLimited(t *testing.T) {
 	}
 }
 
+func TestSendMessageEndpoint(t *testing.T) {
+	dataDir := t.TempDir()
+	identity, err := auth.EnsureIdentity(dataDir)
+	if err != nil {
+		t.Fatalf("ensure identity: %v", err)
+	}
+
+	service := auth.NewService(store.New(filepath.Join(dataDir, "config.json")), auth.NewTokenManager(identity))
+	code, err := service.GeneratePairingCode(2*time.Minute, []string{"send"})
+	if err != nil {
+		t.Fatalf("generate send code: %v", err)
+	}
+	pairResult, err := service.Pair(context.Background(), code.Code, "sender", "android")
+	if err != nil {
+		t.Fatalf("pair sender: %v", err)
+	}
+
+	server := NewServer(Config{}, stubRunner{
+		sendResult: imsg.SendMessageResult{
+			Status:  "sent",
+			To:      "+15551234567",
+			Service: "sms",
+		},
+	}, events.NewHub(), service, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"to":"+15551234567","text":"hi","service":"sms"}`))
+	req.Header.Set("Authorization", "Bearer "+pairResult.Token)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", rec.Code)
+	}
+
+	var body imsg.SendMessageResult
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.To != "+15551234567" || body.Service != "sms" {
+		t.Fatalf("unexpected send response %#v", body)
+	}
+}
+
 func TestWebhookEndpoints(t *testing.T) {
 	dataDir := t.TempDir()
 	identity, err := auth.EnsureIdentity(dataDir)
@@ -255,9 +298,10 @@ func TestWebhookEndpoints(t *testing.T) {
 }
 
 type stubRunner struct {
-	version  string
-	chats    []imsg.Chat
-	messages []imsg.Message
+	version    string
+	chats      []imsg.Chat
+	messages   []imsg.Message
+	sendResult imsg.SendMessageResult
 }
 
 func (s stubRunner) Version(context.Context) (string, error) {
@@ -270,6 +314,10 @@ func (s stubRunner) ListChats(context.Context, int) ([]imsg.Chat, error) {
 
 func (s stubRunner) ListMessages(context.Context, int64, imsg.ListMessagesOptions) ([]imsg.Message, error) {
 	return s.messages, nil
+}
+
+func (s stubRunner) SendMessage(context.Context, imsg.SendMessageRequest) (imsg.SendMessageResult, error) {
+	return s.sendResult, nil
 }
 
 type stubWebhookService struct {
