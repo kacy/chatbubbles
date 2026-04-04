@@ -46,3 +46,15 @@ type ListMessagesOptions struct {
 	After       *time.Time
 	Attachments bool
 }
+
+type SendMessageRequest struct {
+	To      string
+	Text    string
+	Service string
+}
+
+type SendMessageResult struct {
+	Status  string `json:"status"`
+	To      string `json:"to"`
+	Service string `json:"service"`
+}

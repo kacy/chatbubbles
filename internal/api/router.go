@@ -28,6 +28,7 @@ type Runner interface {
 	Version(ctx context.Context) (string, error)
 	ListChats(ctx context.Context, limit int) ([]imsg.Chat, error)
 	ListMessages(ctx context.Context, chatID int64, opts imsg.ListMessagesOptions) ([]imsg.Message, error)
+	SendMessage(ctx context.Context, req imsg.SendMessageRequest) (imsg.SendMessageResult, error)
 }
 
 type Server struct {
@@ -69,6 +70,7 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service
 	mux.HandleFunc("GET /v1/server", s.requireAuth("read", "read", s.handleServer))
 	mux.HandleFunc("GET /v1/chats", s.requireAuth("read", "read", s.handleChats))
 	mux.HandleFunc("GET /v1/chats/{id}/messages", s.requireAuth("read", "read", s.handleMessages))
+	mux.HandleFunc("POST /v1/messages", s.requireAuth("send", "send", s.handleSendMessage))
 	mux.HandleFunc("GET /v1/events", s.requireAuth("read", "read", s.handleEvents))
 
 	return s.logRequests(mux)

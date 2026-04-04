@@ -47,6 +47,15 @@ curl -sk https://127.0.0.1:8443/v1/webhooks \
 
 webhook targets must be `https://` and cannot resolve to loopback, private, link-local, or metadata addresses.
 
+message sending is now available on the api side too:
+
+```sh
+curl -sk https://127.0.0.1:8443/v1/messages \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"to":"+15551234567","text":"hi from imsg-bridge","service":"auto"}'
+```
+
 ## local admin
 
 the daemon also exposes a unix socket at `~/.local/share/imsg-bridge/imsg-bridge.sock` for local admin commands.
