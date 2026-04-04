@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	qrterminal "github.com/mdp/qrterminal/v3"
 )
 
 func main() {
@@ -84,9 +86,44 @@ func runPair(socketPath string, args []string) error {
 		return fmt.Errorf("%s", body.Error)
 	}
 
+	statusResp, err := request(socketPath, map[string]any{"cmd": "status"})
+	if err != nil {
+		return err
+	}
+
+	var status struct {
+		PairHost       string `json:"pair_host"`
+		TLSFingerprint string `json:"tls_fingerprint"`
+		Error          string `json:"error"`
+	}
+	if err := json.Unmarshal(statusResp, &status); err != nil {
+		return err
+	}
+	if status.Error != "" {
+		return fmt.Errorf("%s", status.Error)
+	}
+	if status.PairHost == "" || status.TLSFingerprint == "" {
+		return fmt.Errorf("status is missing pair_host or tls_fingerprint")
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"h":  status.PairHost,
+		"fp": status.TLSFingerprint,
+		"c":  body.Code,
+		"v":  1,
+	})
+	if err != nil {
+		return err
+	}
+
 	fmt.Printf("code: %s\n", body.Code)
 	fmt.Printf("expires_at: %s\n", body.ExpiresAt)
 	fmt.Printf("scopes: %s\n", strings.Join(body.Scopes, ","))
+	fmt.Printf("pair_host: %s\n", status.PairHost)
+	fmt.Printf("tls_fingerprint: %s\n", status.TLSFingerprint)
+	fmt.Println("qr:")
+	qrterminal.GenerateHalfBlock(string(payload), qrterminal.L, os.Stdout)
+	fmt.Printf("payload: %s\n", payload)
 	return nil
 }
 
@@ -101,6 +138,7 @@ func runStatus(socketPath string) error {
 		Version        string `json:"version"`
 		ImsgVersion    string `json:"imsg_version"`
 		TailscaleIP    string `json:"tailscale_ip"`
+		PairHost       string `json:"pair_host"`
 		TLSFingerprint string `json:"tls_fingerprint"`
 		UptimeSeconds  int64  `json:"uptime_seconds"`
 		Error          string `json:"error"`
@@ -117,6 +155,9 @@ func runStatus(socketPath string) error {
 	fmt.Printf("imsg_version: %s\n", body.ImsgVersion)
 	if body.TailscaleIP != "" {
 		fmt.Printf("tailscale_ip: %s\n", body.TailscaleIP)
+	}
+	if body.PairHost != "" {
+		fmt.Printf("pair_host: %s\n", body.PairHost)
 	}
 	fmt.Printf("tls_fingerprint: %s\n", body.TLSFingerprint)
 	fmt.Printf("uptime_seconds: %d\n", body.UptimeSeconds)

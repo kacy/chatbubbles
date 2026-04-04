@@ -89,6 +89,7 @@ func main() {
 			Version:        version,
 			ImsgVersion:    imsgVersion,
 			TailscaleIP:    cfg.TailscaleIP,
+			PairHost:       pairHost(cfg.ListenAddr, cfg.TailscaleIP),
 			TLSFingerprint: material.Fingerprint,
 			UptimeSeconds:  int64(time.Since(cfg.StartedAt).Seconds()),
 			Clients:        clients,
@@ -208,4 +209,22 @@ func detectTailscaleIP() string {
 	}
 
 	return ""
+}
+
+func pairHost(listenAddr string, tailscaleIP string) string {
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return ""
+	}
+
+	switch host {
+	case "", "0.0.0.0", "::":
+		if tailscaleIP != "" {
+			host = tailscaleIP
+		} else {
+			host = "localhost"
+		}
+	}
+
+	return net.JoinHostPort(host, port)
 }
