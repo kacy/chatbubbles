@@ -1,3 +1,11 @@
 bin/
 dist/
 .DS_Store
+web/node_modules/
+web/dist/
+web/.wrangler/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
+web/tailwind.config.js
+web/tailwind.config.d.ts

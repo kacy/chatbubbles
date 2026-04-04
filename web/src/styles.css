@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply min-h-screen bg-mist text-ink antialiased;
+    background-image:
+      radial-gradient(circle at top left, rgba(16, 185, 129, 0.12), transparent 32%),
+      radial-gradient(circle at bottom right, rgba(249, 115, 22, 0.12), transparent 28%),
+      linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,1));
+  }
+
+  input,
+  textarea,
+  button,
+  select {
+    @apply outline-none;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-3xl border border-white/70 bg-white/85 shadow-panel backdrop-blur;
+  }
+
+  .field {
+    @apply w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-signal focus:ring-2 focus:ring-signal/20;
+  }
+
+  .button-primary {
+    @apply inline-flex items-center justify-center rounded-2xl bg-signal px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300;
+  }
+
+  .button-secondary {
+    @apply inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50;
+  }
+
+  .pill {
+    @apply inline-flex items-center rounded-full bg-glow px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-signal;
+  }
+}
