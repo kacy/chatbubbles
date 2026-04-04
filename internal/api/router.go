@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kacy/imsg-bridge/internal/auth"
 	"github.com/kacy/imsg-bridge/internal/events"
 	"github.com/kacy/imsg-bridge/internal/imsg"
 )
@@ -30,16 +31,22 @@ type Runner interface {
 }
 
 type Server struct {
-	cfg    Config
-	hub    *events.Hub
-	runner Runner
+	cfg     Config
+	auth    Authenticator
+	pairing *auth.Service
+	hub     *events.Hub
+	runner  Runner
 }
 
-func NewServer(cfg Config, runner Runner, hub *events.Hub) http.Handler {
+func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service) http.Handler {
 	s := &Server{
-		cfg:    cfg,
-		hub:    hub,
-		runner: runner,
+		cfg:     cfg,
+		pairing: pairing,
+		hub:     hub,
+		runner:  runner,
+	}
+	if pairing != nil {
+		s.auth = pairing
 	}
 
 	if s.cfg.TailscaleIP == "" {
@@ -48,10 +55,11 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
-	mux.HandleFunc("GET /v1/server", s.handleServer)
-	mux.HandleFunc("GET /v1/chats", s.handleChats)
-	mux.HandleFunc("GET /v1/chats/{id}/messages", s.handleMessages)
-	mux.HandleFunc("GET /v1/events", s.handleEvents)
+	mux.HandleFunc("POST /v1/pair", s.handlePair)
+	mux.HandleFunc("GET /v1/server", s.requireAuth("read", s.handleServer))
+	mux.HandleFunc("GET /v1/chats", s.requireAuth("read", s.handleChats))
+	mux.HandleFunc("GET /v1/chats/{id}/messages", s.requireAuth("read", s.handleMessages))
+	mux.HandleFunc("GET /v1/events", s.requireAuth("read", s.handleEvents))
 
 	return s.logRequests(mux)
 }
