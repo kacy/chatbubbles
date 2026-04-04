@@ -1,7 +1,8 @@
 package bridgetls
 
 import (
-	"crypto/ed25519"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -51,7 +52,7 @@ func EnsureMaterial(dataDir string, serverName string, hosts []string) (Material
 		return Material{}, errors.New("tls material is incomplete")
 	}
 
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return Material{}, fmt.Errorf("generate key: %w", err)
 	}
@@ -83,7 +84,7 @@ func EnsureMaterial(dataDir string, serverName string, hosts []string) (Material
 		template.DNSNames = append(template.DNSNames, host)
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, template, template, publicKey, privateKey)
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, privateKey.Public(), privateKey)
 	if err != nil {
 		return Material{}, fmt.Errorf("create certificate: %w", err)
 	}

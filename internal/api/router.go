@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kacy/imsg-bridge/internal/events"
 	"github.com/kacy/imsg-bridge/internal/imsg"
 )
 
@@ -30,12 +31,14 @@ type Runner interface {
 
 type Server struct {
 	cfg    Config
+	hub    *events.Hub
 	runner Runner
 }
 
-func NewServer(cfg Config, runner Runner) http.Handler {
+func NewServer(cfg Config, runner Runner, hub *events.Hub) http.Handler {
 	s := &Server{
 		cfg:    cfg,
+		hub:    hub,
 		runner: runner,
 	}
 
@@ -48,6 +51,7 @@ func NewServer(cfg Config, runner Runner) http.Handler {
 	mux.HandleFunc("GET /v1/server", s.handleServer)
 	mux.HandleFunc("GET /v1/chats", s.handleChats)
 	mux.HandleFunc("GET /v1/chats/{id}/messages", s.handleMessages)
+	mux.HandleFunc("GET /v1/events", s.handleEvents)
 
 	return s.logRequests(mux)
 }

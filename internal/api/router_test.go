@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kacy/imsg-bridge/internal/events"
 	"github.com/kacy/imsg-bridge/internal/imsg"
 )
 
@@ -19,7 +20,7 @@ func TestHandleServer(t *testing.T) {
 		TailscaleIP: "100.64.0.3",
 	}, stubRunner{
 		version: "0.5.0",
-	})
+	}, events.NewHub())
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/server", nil)
 	rec := httptest.NewRecorder()
@@ -55,7 +56,7 @@ func TestHandleServer(t *testing.T) {
 func TestHandleChats(t *testing.T) {
 	server := NewServer(Config{}, stubRunner{
 		chats: []imsg.Chat{{ID: 3, Identifier: "+15551234567"}},
-	})
+	}, events.NewHub())
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/chats?limit=1", nil)
 	rec := httptest.NewRecorder()
@@ -81,7 +82,7 @@ func TestHandleChats(t *testing.T) {
 func TestHandleMessages(t *testing.T) {
 	server := NewServer(Config{}, stubRunner{
 		messages: []imsg.Message{{ID: 1, ChatID: 7, Text: "hello"}},
-	})
+	}, events.NewHub())
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/chats/7/messages?limit=1", nil)
 	rec := httptest.NewRecorder()

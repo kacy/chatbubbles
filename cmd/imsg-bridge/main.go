@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
 	"net"
@@ -13,7 +14,9 @@ import (
 	"time"
 
 	"github.com/kacy/imsg-bridge/internal/api"
+	"github.com/kacy/imsg-bridge/internal/events"
 	"github.com/kacy/imsg-bridge/internal/imsg"
+	"github.com/kacy/imsg-bridge/internal/store"
 	bridgetls "github.com/kacy/imsg-bridge/internal/tls"
 )
 
@@ -41,7 +44,14 @@ func main() {
 	}
 
 	runner := imsg.NewRunner("")
-	handler := api.NewServer(cfg, runner)
+	hub := events.NewHub()
+	stateStore := store.New(filepath.Join(dataDir, "config.json"))
+	state, err := stateStore.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	handler := api.NewServer(cfg, runner, hub)
 
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -51,6 +61,26 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	watcher := imsg.NewWatcher(runner, state.LastWatchRowID)
+	go func() {
+		err := watcher.Run(ctx, func(event imsg.WatchEvent) {
+			if rowID := event.RowID(); rowID > state.LastWatchRowID {
+				state.LastWatchRowID = rowID
+				if err := stateStore.Save(store.Config{LastWatchRowID: state.LastWatchRowID}); err != nil {
+					log.Printf("save watch state failed: %v", err)
+				}
+			}
+
+			hub.Publish(events.Event{
+				Type: event.Name(),
+				Data: event.Message,
+			})
+		})
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("watcher exited: %v", err)
+		}
+	}()
 
 	go func() {
 		<-ctx.Done()
