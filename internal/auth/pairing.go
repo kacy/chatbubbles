@@ -30,6 +30,12 @@ type PairResult struct {
 	Scopes    []string
 }
 
+type PairingCode struct {
+	Code      string
+	ExpiresAt time.Time
+	Scopes    []string
+}
+
 type Service struct {
 	store        *store.Store
 	tokens       *TokenManager
@@ -85,6 +91,40 @@ func (s *Service) EnsureBootstrap(serverName string) (string, error) {
 	}
 
 	return created, nil
+}
+
+func (s *Service) GeneratePairingCode(ttl time.Duration, scopes []string) (PairingCode, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if ttl <= 0 {
+		ttl = s.pairingTTL
+	}
+
+	if len(scopes) == 0 {
+		scopes = s.defaultScope
+	}
+
+	result := PairingCode{
+		Code:      randomCode(6),
+		ExpiresAt: s.now().Add(ttl),
+		Scopes:    cleanScopes(scopes),
+	}
+
+	_, err := s.store.Update(func(cfg *store.Config) error {
+		pruneExpiredCodes(cfg, s.now())
+		cfg.PendingPairingCodes = append(cfg.PendingPairingCodes, store.PendingPairCode{
+			Code:      result.Code,
+			Scopes:    slices.Clone(result.Scopes),
+			ExpiresAt: result.ExpiresAt,
+		})
+		return nil
+	})
+	if err != nil {
+		return PairingCode{}, err
+	}
+
+	return result, nil
 }
 
 func (s *Service) Pair(_ context.Context, code string, clientName string, clientType string) (PairResult, error) {
@@ -195,6 +235,50 @@ func (s *Service) HasScope(claims TokenClaims, scope string) bool {
 	}
 
 	return false
+}
+
+func (s *Service) ListClients() ([]store.Client, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cfg, err := s.store.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	clients := make([]store.Client, len(cfg.Clients))
+	copy(clients, cfg.Clients)
+	return clients, nil
+}
+
+func (s *Service) RevokeClient(clientID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		return false, nil
+	}
+
+	revoked := false
+	_, err := s.store.Update(func(cfg *store.Config) error {
+		for i := range cfg.Clients {
+			if cfg.Clients[i].ID != clientID {
+				continue
+			}
+
+			cfg.Clients[i].Revoked = true
+			revoked = true
+			return nil
+		}
+
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return revoked, nil
 }
 
 func pruneExpiredCodes(cfg *store.Config, now time.Time) {
