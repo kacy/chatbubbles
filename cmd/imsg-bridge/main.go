@@ -4,28 +4,41 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/kacy/imsg-bridge/internal/api"
 	"github.com/kacy/imsg-bridge/internal/imsg"
+	bridgetls "github.com/kacy/imsg-bridge/internal/tls"
 )
 
 const version = "0.1.0"
 
 func main() {
 	var cfg api.Config
+	var dataDir string
 
 	flag.StringVar(&cfg.ListenAddr, "listen", ":8443", "http listen address")
 	flag.StringVar(&cfg.ServerName, "server-name", hostname(), "server name")
 	flag.StringVar(&cfg.TailscaleIP, "tailscale-ip", "", "override detected tailscale ip")
+	flag.StringVar(&dataDir, "data-dir", defaultDataDir(), "data directory")
 	flag.Parse()
 
 	cfg.Version = version
 	cfg.StartedAt = time.Now().UTC()
+	if cfg.TailscaleIP == "" {
+		cfg.TailscaleIP = detectTailscaleIP()
+	}
+
+	material, err := bridgetls.EnsureMaterial(dataDir, cfg.ServerName, []string{cfg.TailscaleIP, hostname()})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	runner := imsg.NewRunner("")
 	handler := api.NewServer(cfg, runner)
@@ -50,8 +63,9 @@ func main() {
 		}
 	}()
 
-	log.Printf("serving on %s", cfg.ListenAddr)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	log.Printf("serving https on %s", cfg.ListenAddr)
+	log.Printf("tls fingerprint %s", material.Fingerprint)
+	if err := srv.ListenAndServeTLS(material.CertPath, material.KeyPath); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
 }
@@ -63,4 +77,45 @@ func hostname() string {
 	}
 
 	return name
+}
+
+func defaultDataDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "imsg-bridge-data"
+	}
+
+	return filepath.Join(home, ".local", "share", "imsg-bridge")
+}
+
+func detectTailscaleIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok || ipNet.IP == nil {
+				continue
+			}
+
+			ip := ipNet.IP.To4()
+			if ip == nil {
+				continue
+			}
+
+			if ip[0] == 100 {
+				return ip.String()
+			}
+		}
+	}
+
+	return ""
 }
