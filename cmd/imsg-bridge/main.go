@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kacy/imsg-bridge/internal/api"
+	"github.com/kacy/imsg-bridge/internal/auth"
 	"github.com/kacy/imsg-bridge/internal/events"
 	"github.com/kacy/imsg-bridge/internal/imsg"
 	"github.com/kacy/imsg-bridge/internal/store"
@@ -43,6 +44,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	identity, err := auth.EnsureIdentity(dataDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	runner := imsg.NewRunner("")
 	hub := events.NewHub()
 	stateStore := store.New(filepath.Join(dataDir, "config.json"))
@@ -50,8 +56,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	authService := auth.NewService(stateStore, auth.NewTokenManager(identity))
+	bootstrapCode, err := authService.EnsureBootstrap(cfg.ServerName)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	handler := api.NewServer(cfg, runner, hub)
+	handler := api.NewServer(cfg, runner, hub, authService)
 
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -95,6 +106,9 @@ func main() {
 
 	log.Printf("serving https on %s", cfg.ListenAddr)
 	log.Printf("tls fingerprint %s", material.Fingerprint)
+	if bootstrapCode != "" {
+		log.Printf("bootstrap pairing code %s", bootstrapCode)
+	}
 	if err := srv.ListenAndServeTLS(material.CertPath, material.KeyPath); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
