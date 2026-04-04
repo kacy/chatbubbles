@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -42,6 +43,7 @@ func main() {
 	if cfg.TailscaleIP == "" {
 		cfg.TailscaleIP = detectTailscaleIP()
 	}
+	pairHost := pairHost(cfg.ListenAddr, cfg.TailscaleIP)
 	if socketPath == "" {
 		socketPath = filepath.Join(dataDir, "imsg-bridge.sock")
 	}
@@ -89,7 +91,7 @@ func main() {
 			Version:        version,
 			ImsgVersion:    imsgVersion,
 			TailscaleIP:    cfg.TailscaleIP,
-			PairHost:       pairHost(cfg.ListenAddr, cfg.TailscaleIP),
+			PairHost:       pairHost,
 			TLSFingerprint: material.Fingerprint,
 			UptimeSeconds:  int64(time.Since(cfg.StartedAt).Seconds()),
 			Clients:        clients,
@@ -153,6 +155,7 @@ func main() {
 	log.Printf("serving https on %s", cfg.ListenAddr)
 	log.Printf("control socket %s", socketPath)
 	log.Printf("tls fingerprint %s", material.Fingerprint)
+	logPairingWarnings(cfg.ListenAddr, cfg.TailscaleIP, pairHost)
 	if bootstrapCode != "" {
 		log.Printf("bootstrap pairing code %s", bootstrapCode)
 	}
@@ -227,4 +230,26 @@ func pairHost(listenAddr string, tailscaleIP string) string {
 	}
 
 	return net.JoinHostPort(host, port)
+}
+
+func logPairingWarnings(listenAddr string, tailscaleIP string, host string) {
+	if tailscaleIP != "" {
+		log.Printf("pair host %s", host)
+		return
+	}
+
+	log.Printf("warning: tailscale ip was not detected automatically")
+
+	if host == "" {
+		log.Printf("warning: direct pairing is missing a reachable host; start with --tailscale-ip <ip> or bind to an explicit host")
+		return
+	}
+
+	if strings.HasPrefix(host, "localhost:") || strings.HasPrefix(host, "127.0.0.1:") || strings.HasPrefix(host, "[::1]:") {
+		log.Printf("warning: direct pairing will advertise %s, which only works on this machine", host)
+		log.Printf("warning: if you expect phone or browser pairing over tailscale, start with --tailscale-ip <ip>")
+		return
+	}
+
+	log.Printf("warning: pairing is using %s without a detected tailscale ip", host)
 }

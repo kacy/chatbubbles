@@ -1,36 +1,74 @@
 # imsg-bridge
 
-`imsg-bridge` is an authenticated https api for reading and sending iMessage data over tailscale.
+`imsg-bridge` is a small https api for iMessage over tailscale.
 
-this repo now has the phase 1 and phase 2 foundations plus the first auth bootstrap path: a small daemon, self-signed tls, `imsg` subprocess wrappers, a websocket event stream backed by `imsg watch`, and token-based api access via pairing.
+it runs on a Mac, talks to [`imsg`](https://github.com/steipete/imsg), and gives paired clients a clean way to read chats, stream events, send messages, and manage webhooks without exposing the machine to the public internet.
 
-## prerequisites
+## what it does
 
-- macOS 14+
-- `imsg` installed with `brew install imsg`
-- messages signed in
-- full disk access granted to the terminal or daemon
-- tailscale installed and connected
+today, `imsg-bridge` supports:
+
+- tls on first boot with a pinned self-signed fingerprint
+- token-based auth with direct pairing and delegated web sessions
+- read endpoints for server info, chats, and message history
+- a websocket event stream backed by `imsg watch`
+- local admin over a unix socket with `imsg-bridge-cli`
+- webhook registration and delivery
+- api-based message sending
+
+still landing:
+
+- attachment upload and download
+- a more polished install story for running it as a background service
+
+## what you need
+
+- macOS 14 or newer
+- Messages signed in and working
+- full disk access for the terminal or daemon
+- [`imsg`](https://github.com/steipete/imsg): `brew install imsg`
+- [tailscale](https://tailscale.com/) installed and connected
 
 ## quick start
 
 ```sh
 make fmt
 make test
+make build
+make build-cli
 make run
 ```
 
 the server listens on `:8443` by default.
 
-on first boot it creates a self-signed certificate in the data dir and logs the tls fingerprint for pairing clients later.
+on first boot it will:
 
-the daemon also keeps a tiny `config.json` in the data dir so the watcher can resume from the last seen row id after a restart.
+- create a self-signed cert in the data dir
+- log the tls fingerprint used for pairing
+- create a short-lived bootstrap pairing code if no clients exist yet
 
-on a fresh boot with no paired clients, the daemon logs a short-lived bootstrap pairing code. after that, use `imsg-bridge-cli pair` over the local control socket to mint more pairing codes without restarting the daemon.
+after that, local admin happens over the unix socket at `~/.local/share/imsg-bridge/imsg-bridge.sock`.
 
-`imsg-bridge-cli pair` now prints the code, the pinned tls fingerprint, and a terminal qr payload that direct clients can scan.
+## pairing a client
 
-web clients can also use the delegated session flow:
+the normal path is:
+
+```sh
+imsg-bridge-cli pair
+```
+
+that command mints a pairing code, prints the server fingerprint, and renders a terminal qr that direct clients can scan.
+
+common local commands:
+
+```sh
+imsg-bridge-cli status
+imsg-bridge-cli pair
+imsg-bridge-cli clients
+imsg-bridge-cli revoke c_01example
+```
+
+web clients use a delegated session flow instead of qr pairing:
 
 ```sh
 curl -sk https://127.0.0.1:8443/v1/sessions \
@@ -38,18 +76,27 @@ curl -sk https://127.0.0.1:8443/v1/sessions \
   -d '{"client_name":"Chrome","client_type":"web"}'
 ```
 
-poll the returned `session_id`, then approve it from an already-paired client with `send` scope.
+the browser polls the returned `session_id`, and an already-paired client approves it.
 
-admin-scoped clients can also manage webhooks:
+## api shape
 
-```sh
-curl -sk https://127.0.0.1:8443/v1/webhooks \
-  -H "Authorization: Bearer $TOKEN"
-```
+main endpoints:
 
-webhook targets must be `https://` and cannot resolve to loopback, private, link-local, or metadata addresses.
+- `GET /healthz`
+- `GET /v1/server`
+- `GET /v1/chats`
+- `GET /v1/chats/{id}/messages`
+- `POST /v1/pair`
+- `POST /v1/sessions`
+- `GET /v1/sessions/{id}`
+- `POST /v1/sessions/{id}/approve`
+- `GET /v1/events`
+- `POST /v1/messages`
+- `GET /v1/webhooks`
+- `POST /v1/webhooks`
+- `DELETE /v1/webhooks/{id}`
 
-message sending is now available on the api side too:
+example send request:
 
 ```sh
 curl -sk https://127.0.0.1:8443/v1/messages \
@@ -58,13 +105,19 @@ curl -sk https://127.0.0.1:8443/v1/messages \
   -d '{"to":"+15551234567","text":"hi from imsg-bridge","service":"auto"}'
 ```
 
-## local admin
-
-the daemon also exposes a unix socket at `~/.local/share/imsg-bridge/imsg-bridge.sock` for local admin commands.
+example webhook list request:
 
 ```sh
-imsg-bridge-cli status
-imsg-bridge-cli pair
-imsg-bridge-cli clients
-imsg-bridge-cli revoke c_01example
+curl -sk https://127.0.0.1:8443/v1/webhooks \
+  -H "Authorization: Bearer $TOKEN"
 ```
+
+webhook targets must use `https://` and cannot resolve to loopback, private, link-local, or metadata addresses.
+
+## project notes
+
+- the daemon keeps its state in `~/.local/share/imsg-bridge/`
+- the api is meant for tailscale clients, not direct public exposure
+- websocket auth uses `?token=` because browser websocket clients cannot set custom auth headers
+
+if you want the deeper architecture and rollout plan, that lives in the repo notes rather than this README.
