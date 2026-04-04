@@ -38,6 +38,15 @@ curl -sk https://127.0.0.1:8443/v1/sessions \
 
 poll the returned `session_id`, then approve it from an already-paired client with `send` scope.
 
+admin-scoped clients can also manage webhooks:
+
+```sh
+curl -sk https://127.0.0.1:8443/v1/webhooks \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+webhook targets must be `https://` and cannot resolve to loopback, private, link-local, or metadata addresses.
+
 ## local admin
 
 the daemon also exposes a unix socket at `~/.local/share/imsg-bridge/imsg-bridge.sock` for local admin commands.
