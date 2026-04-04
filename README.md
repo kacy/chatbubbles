@@ -28,6 +28,16 @@ the daemon also keeps a tiny `config.json` in the data dir so the watcher can re
 
 on a fresh boot with no paired clients, the daemon logs a short-lived bootstrap pairing code. after that, use `imsg-bridge-cli pair` over the local control socket to mint more pairing codes without restarting the daemon.
 
+web clients can also use the delegated session flow:
+
+```sh
+curl -sk https://127.0.0.1:8443/v1/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{"client_name":"Chrome","client_type":"web"}'
+```
+
+poll the returned `session_id`, then approve it from an already-paired client with `send` scope.
+
 ## local admin
 
 the daemon also exposes a unix socket at `~/.local/share/imsg-bridge/imsg-bridge.sock` for local admin commands.

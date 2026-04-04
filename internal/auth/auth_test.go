@@ -68,3 +68,58 @@ func TestPairingFlow(t *testing.T) {
 		t.Fatal("expected read scope")
 	}
 }
+
+func TestSessionFlow(t *testing.T) {
+	dataDir := t.TempDir()
+	identity, err := EnsureIdentity(dataDir)
+	if err != nil {
+		t.Fatalf("ensure identity: %v", err)
+	}
+
+	manager := NewTokenManager(identity)
+	service := NewService(store.New(filepath.Join(dataDir, "config.json")), manager)
+
+	code, err := service.EnsureBootstrap("test mac")
+	if err != nil {
+		t.Fatalf("ensure bootstrap: %v", err)
+	}
+
+	paired, err := service.Pair(context.Background(), code, "pixel", "android")
+	if err != nil {
+		t.Fatalf("pair client: %v", err)
+	}
+
+	_, claims, err := service.Authenticate(paired.Token)
+	if err != nil {
+		t.Fatalf("authenticate approver: %v", err)
+	}
+
+	session, err := service.CreateSession(context.Background(), "chrome", "web")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	pending, err := service.GetSession(context.Background(), session.ID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if pending.Status != "pending" {
+		t.Fatalf("expected pending session, got %q", pending.Status)
+	}
+
+	approved, err := service.ApproveSession(context.Background(), session.ID, claims, []string{"read"})
+	if err != nil {
+		t.Fatalf("approve session: %v", err)
+	}
+	if approved.Token == "" || approved.ClientID == "" {
+		t.Fatal("expected approved token and client id")
+	}
+
+	loaded, err := service.GetSession(context.Background(), session.ID)
+	if err != nil {
+		t.Fatalf("get approved session: %v", err)
+	}
+	if loaded.Status != "approved" {
+		t.Fatalf("expected approved session, got %q", loaded.Status)
+	}
+}
