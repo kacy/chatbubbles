@@ -59,3 +59,8 @@ func bearerToken(r *http.Request) string {
 
 	return strings.TrimSpace(token)
 }
+
+func authClaimsFromContext(ctx context.Context) (auth.TokenClaims, bool) {
+	claims, ok := ctx.Value(authClaimsKey).(auth.TokenClaims)
+	return claims, ok
+}

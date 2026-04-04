@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/kacy/imsg-bridge/internal/auth"
 	"github.com/kacy/imsg-bridge/internal/events"
 	"github.com/kacy/imsg-bridge/internal/imsg"
+	"github.com/kacy/imsg-bridge/internal/store"
 )
 
 func TestHandleServer(t *testing.T) {
@@ -102,6 +106,74 @@ func TestHandleMessages(t *testing.T) {
 
 	if len(body.Messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(body.Messages))
+	}
+}
+
+func TestSessionEndpoints(t *testing.T) {
+	dataDir := t.TempDir()
+	identity, err := auth.EnsureIdentity(dataDir)
+	if err != nil {
+		t.Fatalf("ensure identity: %v", err)
+	}
+
+	service := auth.NewService(store.New(filepath.Join(dataDir, "config.json")), auth.NewTokenManager(identity))
+	code, err := service.EnsureBootstrap("test mac")
+	if err != nil {
+		t.Fatalf("ensure bootstrap: %v", err)
+	}
+	pairResult, err := service.Pair(context.Background(), code, "pixel", "android")
+	if err != nil {
+		t.Fatalf("pair client: %v", err)
+	}
+
+	server := NewServer(Config{}, stubRunner{version: "0.5.0"}, events.NewHub(), service)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/sessions", strings.NewReader(`{"client_name":"Chrome","client_type":"web"}`))
+	createRec := httptest.NewRecorder()
+	server.ServeHTTP(createRec, createReq)
+
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", createRec.Code)
+	}
+
+	var created struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	pollReq := httptest.NewRequest(http.MethodGet, "/v1/sessions/"+created.SessionID, nil)
+	pollRec := httptest.NewRecorder()
+	server.ServeHTTP(pollRec, pollReq)
+	if pollRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 polling, got %d", pollRec.Code)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/v1/sessions/"+created.SessionID+"/approve", strings.NewReader(`{"scopes":["read"]}`))
+	approveReq.Header.Set("Authorization", "Bearer "+pairResult.Token)
+	approveRec := httptest.NewRecorder()
+	server.ServeHTTP(approveRec, approveReq)
+	if approveRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 approving, got %d", approveRec.Code)
+	}
+
+	finalReq := httptest.NewRequest(http.MethodGet, "/v1/sessions/"+created.SessionID, nil)
+	finalRec := httptest.NewRecorder()
+	server.ServeHTTP(finalRec, finalReq)
+	if finalRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 approved poll, got %d", finalRec.Code)
+	}
+
+	var approved struct {
+		Status string `json:"status"`
+		Token  string `json:"token"`
+	}
+	if err := json.NewDecoder(finalRec.Body).Decode(&approved); err != nil {
+		t.Fatalf("decode final response: %v", err)
+	}
+	if approved.Status != "approved" || approved.Token == "" {
+		t.Fatalf("expected approved token response, got %#v", approved)
 	}
 }
 

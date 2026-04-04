@@ -15,6 +15,8 @@ import (
 
 var ErrUnauthorized = errors.New("unauthorized")
 var ErrInvalidCode = errors.New("invalid code")
+var ErrSessionExpired = errors.New("session expired")
+var ErrForbidden = errors.New("forbidden")
 
 type Client struct {
 	ID     string
@@ -32,6 +34,16 @@ type PairResult struct {
 
 type PairingCode struct {
 	Code      string
+	ExpiresAt time.Time
+	Scopes    []string
+}
+
+type Session struct {
+	ID        string
+	Code      string
+	Status    string
+	Token     string
+	ClientID  string
 	ExpiresAt time.Time
 	Scopes    []string
 }
@@ -55,6 +67,147 @@ func NewService(stateStore *store.Store, tokens *TokenManager) *Service {
 		defaultScope: []string{"read", "send", "attach"},
 		now:          func() time.Time { return time.Now().UTC() },
 	}
+}
+
+func (s *Service) CreateSession(_ context.Context, clientName string, clientType string) (Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	clientName = strings.TrimSpace(clientName)
+	clientType = strings.TrimSpace(clientType)
+	if clientName == "" || clientType == "" {
+		return Session{}, errors.New("client_name and client_type are required")
+	}
+
+	session := Session{
+		ID:        randomID("s"),
+		Code:      randomDigits(6),
+		Status:    "pending",
+		ExpiresAt: s.now().Add(3 * time.Minute),
+	}
+
+	_, err := s.store.Update(func(cfg *store.Config) error {
+		pruneExpiredCodes(cfg, s.now())
+		pruneExpiredSessions(cfg, s.now())
+		cfg.PendingSessions = append(cfg.PendingSessions, store.PendingSession{
+			ID:         session.ID,
+			Code:       session.Code,
+			ClientName: clientName,
+			ClientType: clientType,
+			Status:     "pending",
+			ExpiresAt:  session.ExpiresAt,
+		})
+		return nil
+	})
+	if err != nil {
+		return Session{}, err
+	}
+
+	return session, nil
+}
+
+func (s *Service) GetSession(_ context.Context, sessionID string) (Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sessionID = strings.TrimSpace(sessionID)
+	cfg, err := s.store.Load()
+	if err != nil {
+		return Session{}, err
+	}
+
+	now := s.now()
+	for _, pending := range cfg.PendingSessions {
+		if pending.ID != sessionID {
+			continue
+		}
+		if !pending.ExpiresAt.After(now) {
+			return Session{}, ErrSessionExpired
+		}
+
+		return Session{
+			ID:        pending.ID,
+			Code:      pending.Code,
+			Status:    pending.Status,
+			Token:     pending.Token,
+			ClientID:  pending.ClientID,
+			ExpiresAt: pending.ExpiresAt,
+			Scopes:    slices.Clone(pending.Scopes),
+		}, nil
+	}
+
+	return Session{}, errors.New("session not found")
+}
+
+func (s *Service) ApproveSession(_ context.Context, sessionID string, approverClaims TokenClaims, scopes []string) (Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sessionID = strings.TrimSpace(sessionID)
+	requestedScopes := cleanScopes(scopes)
+	if len(requestedScopes) == 0 {
+		requestedScopes = []string{"read", "send"}
+	}
+	if !scopesSubset(requestedScopes, approverClaims.Scopes) {
+		return Session{}, ErrForbidden
+	}
+
+	var result Session
+	_, err := s.store.Update(func(cfg *store.Config) error {
+		now := s.now()
+		pruneExpiredSessions(cfg, now)
+
+		for i := range cfg.PendingSessions {
+			session := &cfg.PendingSessions[i]
+			if session.ID != sessionID {
+				continue
+			}
+			if !session.ExpiresAt.After(now) {
+				return ErrSessionExpired
+			}
+
+			clientID := randomID("c")
+			token, claims, err := s.tokens.Mint(clientID, requestedScopes, 24*time.Hour)
+			if err != nil {
+				return err
+			}
+
+			cfg.Clients = append(cfg.Clients, store.Client{
+				ID:        clientID,
+				Name:      session.ClientName,
+				Type:      session.ClientType,
+				Scopes:    slices.Clone(requestedScopes),
+				TokenJTI:  claims.JTI,
+				CreatedAt: now,
+				LastSeen:  now,
+			})
+
+			session.Status = "approved"
+			session.Token = token
+			session.ClientID = clientID
+			session.Scopes = slices.Clone(requestedScopes)
+			session.ExpiresAt = time.Unix(claims.Expiry, 0).UTC()
+
+			result = Session{
+				ID:        session.ID,
+				Code:      session.Code,
+				Status:    session.Status,
+				Token:     session.Token,
+				ClientID:  session.ClientID,
+				ExpiresAt: session.ExpiresAt,
+				Scopes:    slices.Clone(session.Scopes),
+			}
+
+			return nil
+		}
+
+		return errors.New("session not found")
+	})
+	if err != nil {
+		return Session{}, err
+	}
+
+	return result, nil
 }
 
 func (s *Service) EnsureBootstrap(serverName string) (string, error) {
@@ -291,6 +444,16 @@ func pruneExpiredCodes(cfg *store.Config, now time.Time) {
 	cfg.PendingPairingCodes = filtered
 }
 
+func pruneExpiredSessions(cfg *store.Config, now time.Time) {
+	filtered := cfg.PendingSessions[:0]
+	for _, session := range cfg.PendingSessions {
+		if session.ExpiresAt.After(now) || session.Status == "approved" {
+			filtered = append(filtered, session)
+		}
+	}
+	cfg.PendingSessions = filtered
+}
+
 func randomCode(length int) string {
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	raw := make([]byte, length)
@@ -302,6 +465,22 @@ func randomCode(length int) string {
 	builder.Grow(length)
 	for _, value := range raw {
 		builder.WriteByte(alphabet[int(value)%len(alphabet)])
+	}
+
+	return builder.String()
+}
+
+func randomDigits(length int) string {
+	const digits = "0123456789"
+	raw := make([]byte, length)
+	if _, err := rand.Read(raw); err != nil {
+		panic(err)
+	}
+
+	var builder strings.Builder
+	builder.Grow(length)
+	for _, value := range raw {
+		builder.WriteByte(digits[int(value)%len(digits)])
 	}
 
 	return builder.String()
@@ -329,6 +508,21 @@ func cleanScopes(scopes []string) []string {
 
 	slices.Sort(cleaned)
 	return cleaned
+}
+
+func scopesSubset(want []string, have []string) bool {
+	allowed := make(map[string]struct{}, len(have))
+	for _, scope := range have {
+		allowed[scope] = struct{}{}
+	}
+
+	for _, scope := range want {
+		if _, ok := allowed[scope]; !ok {
+			return false
+		}
+	}
+
+	return true
 }
 
 func PairingMessage(code string, expiresAt time.Time) string {
