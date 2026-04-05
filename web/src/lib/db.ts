@@ -6,62 +6,114 @@ const profilesStore = 'profiles';
 const appStateStore = 'app_state';
 
 type AppStateRecord = {
-  key: 'activeProfileId';
+  key: string;
   value: string;
 };
 
 export async function listProfiles(): Promise<StoredServerProfile[]> {
   const db = await openDatabase();
-  const tx = db.transaction(profilesStore, 'readonly');
-  const store = tx.objectStore(profilesStore);
-  const records = await request<StoredServerProfile[]>(store.getAll());
-  return records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  try {
+    const tx = db.transaction(profilesStore, 'readonly');
+    const store = tx.objectStore(profilesStore);
+    const records = await request<StoredServerProfile[]>(store.getAll());
+    return records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  } finally {
+    db.close();
+  }
 }
 
 export async function saveProfile(draft: ProfileDraft): Promise<StoredServerProfile> {
   const db = await openDatabase();
-  const now = new Date().toISOString();
-  const profile: StoredServerProfile = {
-    id: crypto.randomUUID(),
-    createdAt: now,
-    updatedAt: now,
-    ...draft,
-  };
+  try {
+    const now = new Date().toISOString();
+    const profile: StoredServerProfile = {
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      ...draft,
+    };
 
-  const tx = db.transaction(profilesStore, 'readwrite');
-  tx.objectStore(profilesStore).put(profile);
-  await transactionDone(tx);
-  return profile;
+    const tx = db.transaction(profilesStore, 'readwrite');
+    tx.objectStore(profilesStore).put(profile);
+    await transactionDone(tx);
+    return profile;
+  } finally {
+    db.close();
+  }
 }
 
 export async function deleteProfile(id: string): Promise<void> {
   const db = await openDatabase();
-  const tx = db.transaction([profilesStore, appStateStore], 'readwrite');
-  tx.objectStore(profilesStore).delete(id);
-  const activeId = await request<string | undefined>(
-    tx.objectStore(appStateStore).get('activeProfileId'),
-  );
-  if (activeId === id) {
-    tx.objectStore(appStateStore).delete('activeProfileId');
+  try {
+    const tx = db.transaction([profilesStore, appStateStore], 'readwrite');
+    tx.objectStore(profilesStore).delete(id);
+    const appState = tx.objectStore(appStateStore);
+    const activeProfile = await request<AppStateRecord | undefined>(
+      appState.get('activeProfileId'),
+    );
+    if (activeProfile?.value === id) {
+      appState.delete('activeProfileId');
+    }
+    appState.delete(activeChatKey(id));
+    await transactionDone(tx);
+  } finally {
+    db.close();
   }
-  await transactionDone(tx);
 }
 
 export async function setActiveProfile(id: string): Promise<void> {
   const db = await openDatabase();
-  const tx = db.transaction(appStateStore, 'readwrite');
-  const record: AppStateRecord = { key: 'activeProfileId', value: id };
-  tx.objectStore(appStateStore).put(record);
-  await transactionDone(tx);
+  try {
+    const tx = db.transaction(appStateStore, 'readwrite');
+    const record: AppStateRecord = { key: 'activeProfileId', value: id };
+    tx.objectStore(appStateStore).put(record);
+    await transactionDone(tx);
+  } finally {
+    db.close();
+  }
 }
 
 export async function getActiveProfileId(): Promise<string | null> {
   const db = await openDatabase();
-  const tx = db.transaction(appStateStore, 'readonly');
-  const record = await request<AppStateRecord | undefined>(
-    tx.objectStore(appStateStore).get('activeProfileId'),
-  );
-  return record?.value ?? null;
+  try {
+    const tx = db.transaction(appStateStore, 'readonly');
+    const record = await request<AppStateRecord | undefined>(
+      tx.objectStore(appStateStore).get('activeProfileId'),
+    );
+    return record?.value ?? null;
+  } finally {
+    db.close();
+  }
+}
+
+export async function setActiveChat(profileId: string, chatId: number): Promise<void> {
+  const db = await openDatabase();
+  try {
+    const tx = db.transaction(appStateStore, 'readwrite');
+    const record: AppStateRecord = { key: activeChatKey(profileId), value: String(chatId) };
+    tx.objectStore(appStateStore).put(record);
+    await transactionDone(tx);
+  } finally {
+    db.close();
+  }
+}
+
+export async function getActiveChatId(profileId: string): Promise<number | null> {
+  const db = await openDatabase();
+  try {
+    const tx = db.transaction(appStateStore, 'readonly');
+    const record = await request<AppStateRecord | undefined>(
+      tx.objectStore(appStateStore).get(activeChatKey(profileId)),
+    );
+    if (!record?.value) {
+      return null;
+    }
+
+    const value = Number.parseInt(record.value, 10);
+    return Number.isFinite(value) ? value : null;
+  } finally {
+    db.close();
+  }
 }
 
 async function openDatabase(): Promise<IDBDatabase> {
@@ -105,4 +157,8 @@ function transactionDone(tx: IDBTransaction): Promise<void> {
     tx.onabort = () => reject(tx.error);
     tx.onerror = () => reject(tx.error);
   });
+}
+
+function activeChatKey(profileId: string): string {
+  return `activeChat:${profileId}`;
 }

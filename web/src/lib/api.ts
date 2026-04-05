@@ -1,5 +1,7 @@
 import type {
+  Chat,
   CreateSessionResponse,
+  Message,
   PairResponse,
   ServerInfo,
   SessionPollResponse,
@@ -62,6 +64,42 @@ export async function fetchServerInfo(
       Authorization: `Bearer ${token}`,
     },
   });
+}
+
+export async function listChats(
+  apiBaseUrl: string,
+  token: string,
+  limit = 50,
+): Promise<Chat[]> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  const response = await jsonRequest<{ chats: Chat[] }>(`${apiBaseUrl}/v1/chats?${query}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  return response.chats;
+}
+
+export async function listMessages(
+  apiBaseUrl: string,
+  token: string,
+  chatId: number,
+  limit = 100,
+): Promise<Message[]> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  const response = await jsonRequest<{ messages: Message[] }>(
+    `${apiBaseUrl}/v1/chats/${chatId}/messages?${query}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  return response.messages;
 }
 
 async function jsonRequest<T>(url: string, init: RequestInit): Promise<T> {

@@ -62,3 +62,41 @@ export type ServerInfo = {
   uptime_seconds: number;
   tailscale_ip?: string;
 };
+
+export type Chat = {
+  id: number;
+  name?: string;
+  identifier?: string;
+  service?: string;
+  last_message_at?: string;
+};
+
+export type Attachment = {
+  id?: string;
+  filename?: string;
+  mime_type?: string;
+  size_bytes?: number;
+};
+
+export type Reaction = {
+  id: number;
+  sender?: string;
+  type?: string;
+  emoji?: string;
+  is_from_me: boolean;
+  created_at?: string;
+};
+
+export type Message = {
+  id: number;
+  chat_id: number;
+  guid?: string;
+  sender?: string;
+  text?: string;
+  is_from_me: boolean;
+  created_at?: string;
+  attachments?: Attachment[];
+  reactions?: Reaction[];
+  reply_to_guid?: string;
+  destination_caller_id?: string;
+};

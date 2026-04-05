@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 
 import { decryptString, encryptString } from './crypto';
-import { getActiveProfileId, listProfiles, saveProfile, setActiveProfile } from './db';
+import {
+  getActiveChatId,
+  getActiveProfileId,
+  listProfiles,
+  saveProfile,
+  setActiveChat,
+  setActiveProfile,
+} from './db';
 
 describe('persistence', () => {
   beforeEach(() => {
@@ -33,5 +40,21 @@ describe('persistence', () => {
     expect(profiles).toHaveLength(1);
     expect(profiles[0].name).toBe('home');
     expect(await getActiveProfileId()).toBe(profile.id);
+  });
+
+  test('stores the last active chat per profile', async () => {
+    const profile = await saveProfile({
+      name: 'home',
+      apiBaseUrl: 'https://bridge.example.ts.net',
+      wsBaseUrl: 'wss://bridge.example.ts.net',
+      tlsFingerprint: 'SHA256:test',
+      token: await encryptString('secret-token'),
+      scopes: ['read', 'send'],
+      expiresAt: '2026-07-03T00:00:00Z',
+    });
+
+    await setActiveChat(profile.id, 42);
+
+    expect(await getActiveChatId(profile.id)).toBe(42);
   });
 });

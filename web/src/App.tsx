@@ -1,18 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import {
   createSession,
   fetchServerInfo,
+  listChats,
+  listMessages,
   pairClient,
   pollSession,
 } from './lib/api';
 import { decryptString, encryptString } from './lib/crypto';
 import {
   deleteProfile,
+  getActiveChatId,
   getActiveProfileId,
   listProfiles,
   saveProfile,
+  setActiveChat,
   setActiveProfile,
 } from './lib/db';
 import {
@@ -22,7 +26,9 @@ import {
 } from './lib/connection';
 import { parsePairPayload } from './lib/qr';
 import type {
+  Chat,
   CreateSessionResponse,
+  Message,
   PairPayload,
   ServerInfo,
   SessionPollResponse,
@@ -618,27 +624,66 @@ function SessionPage(props: {
 }
 
 function AppShell({ profile }: { profile: StoredServerProfile }) {
+  const activeThreadRequest = useRef(0);
+  const [token, setToken] = useState<string | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [activeChatId, setActiveChatId] = useState<number | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [threadStatus, setThreadStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle',
+  );
   const [error, setError] = useState<string | null>(null);
+  const [threadError, setThreadError] = useState<string | null>(null);
+
+  const activeChat = useMemo(
+    () => chats.find((chat) => chat.id === activeChatId) ?? null,
+    [activeChatId, chats],
+  );
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadServerInfo() {
+    async function loadShell() {
       setStatus('loading');
+      setThreadStatus('idle');
       setError(null);
+      setThreadError(null);
 
       try {
-        const token = await decryptString(profile.token);
-        const result = await fetchServerInfo(profile.apiBaseUrl, token);
+        const decryptedToken = await decryptString(profile.token);
+        const [server, loadedChats, savedActiveChatId] = await Promise.all([
+          fetchServerInfo(profile.apiBaseUrl, decryptedToken),
+          listChats(profile.apiBaseUrl, decryptedToken),
+          getActiveChatId(profile.id),
+        ]);
+
         if (!cancelled) {
-          setServerInfo(result);
+          setToken(decryptedToken);
+          setServerInfo(server);
+          const sortedChats = sortChats(loadedChats);
+          setChats(sortedChats);
           setStatus('ready');
+
+          if (sortedChats.length === 0) {
+            setActiveChatId(null);
+            setMessages([]);
+            setThreadStatus('ready');
+            return;
+          }
+
+          const initialChat =
+            sortedChats.find((chat) => chat.id === savedActiveChatId) ?? sortedChats[0];
+
+          setActiveChatId(initialChat.id);
+          setThreadStatus('loading');
+          void loadMessagesForChat(initialChat.id, decryptedToken);
         }
       } catch (loadError) {
         if (!cancelled) {
           setStatus('error');
+          setThreadStatus('error');
           setError(
             loadError instanceof Error
               ? loadError.message
@@ -648,15 +693,55 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
       }
     }
 
-    void loadServerInfo();
+    void loadShell();
 
     return () => {
       cancelled = true;
     };
   }, [profile]);
 
+  async function loadMessagesForChat(
+    chatId: number,
+    activeToken = token,
+    persistSelection = true,
+  ) {
+    if (!activeToken) {
+      setThreadStatus('error');
+      setThreadError('saved token is not available yet');
+      return;
+    }
+
+    const requestId = ++activeThreadRequest.current;
+    setThreadStatus('loading');
+    setThreadError(null);
+
+    try {
+      const loadedMessages = await listMessages(profile.apiBaseUrl, activeToken, chatId);
+      if (requestId !== activeThreadRequest.current) {
+        return;
+      }
+
+      setMessages(sortMessages(loadedMessages));
+      setActiveChatId(chatId);
+      setThreadStatus('ready');
+
+      if (persistSelection) {
+        await setActiveChat(profile.id, chatId);
+      }
+    } catch (loadError) {
+      if (requestId !== activeThreadRequest.current) {
+        return;
+      }
+
+      setThreadStatus('error');
+      setThreadError(
+        loadError instanceof Error ? loadError.message : 'could not load this conversation',
+      );
+    }
+  }
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
+    <div className="grid gap-6 lg:grid-cols-[0.72fr_1.28fr]">
       <aside className="space-y-6">
         <div className="panel p-6 sm:p-8">
           <p className="pill">active bridge</p>
@@ -675,50 +760,66 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
               <dt className="font-medium text-slate-900">expires at</dt>
               <dd>{profile.expiresAt}</dd>
             </div>
+            {serverInfo ? (
+              <>
+                <div>
+                  <dt className="font-medium text-slate-900">server</dt>
+                  <dd>
+                    {serverInfo.name} · app {serverInfo.version} · imsg {serverInfo.imsg_version}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-900">conversation count</dt>
+                  <dd>{chats.length}</dd>
+                </div>
+              </>
+            ) : null}
           </dl>
         </div>
 
         <InfoCard
-          title="cache-first shell"
-          body="this route is intentionally a shell for now. the final chat experience will hydrate from cache first, then sync against the bridge."
+          title="live read path"
+          body="this screen now uses the real read endpoints. it loads the saved bridge profile, fetches chats, restores the last active conversation, and pulls recent message history."
         />
       </aside>
 
       <section className="panel p-6 sm:p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="pill">app shell</p>
-            <h2 className="mt-4 text-2xl font-semibold">messaging surface comes next</h2>
+            <p className="pill">read path</p>
+            <h2 className="mt-4 text-2xl font-semibold">chats are now live in the browser</h2>
             <p className="mt-3 text-sm text-slate-600">
-              the direct connection and persistence foundation are in place. this screen
-              is the placeholder for chats, thread view, composer, and live updates.
+              this shell now reads straight from the selected bridge. sending, attachments,
+              and live websocket updates can layer onto this without changing the auth model.
             </p>
           </div>
           <StatusBadge status={status} />
         </div>
 
         <div className="mt-8 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm font-semibold text-slate-900">chat list placeholder</p>
-            <div className="mt-4 space-y-3">
-              {['family group', 'project thread', 'notifications'].map((label) => (
-                <div key={label} className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-600">
-                  {label}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-white p-4">
-            <p className="text-sm font-semibold text-slate-900">thread placeholder</p>
-            <div className="mt-4 space-y-3 text-sm text-slate-600">
-              <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                cached messages and sync state will render here.
-              </div>
-              <div className="rounded-2xl bg-glow px-4 py-3 text-signal">
-                composer, attachments, and websocket updates will layer onto this shell.
-              </div>
-            </div>
-          </div>
+          <ChatList
+            activeChatId={activeChatId}
+            chats={chats}
+            disabled={status !== 'ready'}
+            onSelectChat={(chatId) => {
+              if (chatId === activeChatId) {
+                return;
+              }
+              void loadMessagesForChat(chatId);
+            }}
+          />
+          <ThreadView
+            activeChat={activeChat}
+            messages={messages}
+            onReload={() => {
+              if (activeChatId !== null) {
+                void loadMessagesForChat(activeChatId, token, false);
+              }
+            }}
+            status={threadStatus}
+            statusBadge={<StatusBadge status={threadStatus} />}
+            threadError={threadError}
+          />
         </div>
 
         <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
@@ -746,6 +847,196 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
   );
 }
 
+function ChatList(props: {
+  chats: Chat[];
+  activeChatId: number | null;
+  disabled: boolean;
+  onSelectChat: (chatId: number) => void;
+}) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-slate-900">conversations</p>
+        <span className="text-xs uppercase tracking-[0.16em] text-slate-400">
+          {props.chats.length} loaded
+        </span>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {props.chats.length === 0 ? (
+          <div className="rounded-2xl bg-white px-4 py-5 text-sm text-slate-500">
+            no chats came back from the bridge yet.
+          </div>
+        ) : (
+          props.chats.map((chat) => {
+            const active = chat.id === props.activeChatId;
+            return (
+              <button
+                key={chat.id}
+                className={
+                  active
+                    ? 'w-full rounded-2xl border border-signal/20 bg-glow px-4 py-3 text-left'
+                    : 'w-full rounded-2xl border border-transparent bg-white px-4 py-3 text-left transition hover:border-slate-200 hover:bg-slate-100'
+                }
+                disabled={props.disabled}
+                onClick={() => props.onSelectChat(chat.id)}
+                type="button"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">
+                      {displayChatName(chat)}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-slate-500">
+                      {chat.identifier || chat.service || `chat ${chat.id}`}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-[11px] uppercase tracking-[0.16em] text-slate-400">
+                    {formatChatTimestamp(chat.last_message_at)}
+                  </span>
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ThreadView(props: {
+  activeChat: Chat | null;
+  messages: Message[];
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  statusBadge: ReactNode;
+  threadError: string | null;
+  onReload: () => void;
+}) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">
+            {props.activeChat ? displayChatName(props.activeChat) : 'thread'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {props.activeChat
+              ? props.activeChat.identifier || props.activeChat.service || `chat ${props.activeChat.id}`
+              : 'pick a conversation to load recent history'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {props.statusBadge}
+          <button
+            className="button-secondary !px-3 !py-2 text-xs"
+            disabled={!props.activeChat}
+            onClick={props.onReload}
+            type="button"
+          >
+            reload
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 min-h-[28rem] space-y-3 rounded-3xl bg-slate-50 p-4">
+        {props.status === 'idle' ? (
+          <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500">
+            waiting for a conversation to load.
+          </div>
+        ) : null}
+
+        {props.status === 'loading' ? (
+          <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500">
+            pulling recent messages from the bridge…
+          </div>
+        ) : null}
+
+        {props.status === 'error' ? (
+          <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            thread load failed: {props.threadError}
+          </div>
+        ) : null}
+
+        {props.status === 'ready' && props.messages.length === 0 ? (
+          <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500">
+            this conversation is reachable, but there are no messages in the current result set.
+          </div>
+        ) : null}
+
+        {props.messages.map((message) => (
+          <MessageBubble key={message.guid || String(message.id)} message={message} />
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+        write actions are still separate. this screen is the real read path first.
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ message }: { message: Message }) {
+  const fromMe = message.is_from_me;
+  const text = message.text?.trim();
+  const attachments = message.attachments ?? [];
+  const reactions = message.reactions ?? [];
+
+  return (
+    <div className={fromMe ? 'flex justify-end' : 'flex justify-start'}>
+      <article
+        className={
+          fromMe
+            ? 'max-w-[85%] rounded-3xl rounded-br-xl bg-signal px-4 py-3 text-white shadow-sm'
+            : 'max-w-[85%] rounded-3xl rounded-bl-xl bg-white px-4 py-3 text-slate-900 shadow-sm'
+        }
+      >
+        <div className="flex items-center justify-between gap-4">
+          <p className={fromMe ? 'text-xs font-medium uppercase tracking-[0.16em] text-white/70' : 'text-xs font-medium uppercase tracking-[0.16em] text-slate-400'}>
+            {fromMe ? 'you' : message.sender || 'contact'}
+          </p>
+          <p className={fromMe ? 'text-xs text-white/70' : 'text-xs text-slate-400'}>
+            {formatMessageTimestamp(message.created_at)}
+          </p>
+        </div>
+
+        {text ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{text}</p> : null}
+
+        {!text && attachments.length > 0 ? (
+          <p className={fromMe ? 'mt-3 text-sm text-white/80' : 'mt-3 text-sm text-slate-500'}>
+            attachment-only message
+          </p>
+        ) : null}
+
+        {attachments.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {attachments.map((attachment, index) => (
+              <span
+                key={attachment.id || `${message.id}-${index}`}
+                className={
+                  fromMe
+                    ? 'rounded-full bg-white/15 px-3 py-1 text-xs text-white'
+                    : 'rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600'
+                }
+              >
+                {attachment.filename || 'attachment'}
+                {attachment.size_bytes ? ` · ${formatBytes(attachment.size_bytes)}` : ''}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {reactions.length > 0 ? (
+          <p className={fromMe ? 'mt-3 text-xs text-white/70' : 'mt-3 text-xs text-slate-500'}>
+            {reactions
+              .map((reaction) => reaction.emoji || reaction.type || 'reaction')
+              .join(' ')}
+          </p>
+        ) : null}
+      </article>
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: 'idle' | 'loading' | 'ready' | 'error' }) {
   const styles: Record<typeof status, string> = {
     idle: 'bg-slate-100 text-slate-500',
@@ -764,6 +1055,87 @@ function InfoCard(props: { title: string; body: string }) {
       <p className="mt-3 text-sm leading-6 text-slate-600">{props.body}</p>
     </div>
   );
+}
+
+function sortChats(chats: Chat[]): Chat[] {
+  return [...chats].sort((left, right) => {
+    const leftAt = left.last_message_at ? Date.parse(left.last_message_at) : 0;
+    const rightAt = right.last_message_at ? Date.parse(right.last_message_at) : 0;
+    if (leftAt !== rightAt) {
+      return rightAt - leftAt;
+    }
+    return right.id - left.id;
+  });
+}
+
+function sortMessages(messages: Message[]): Message[] {
+  return [...messages].sort((left, right) => {
+    const leftAt = left.created_at ? Date.parse(left.created_at) : 0;
+    const rightAt = right.created_at ? Date.parse(right.created_at) : 0;
+    if (leftAt !== rightAt) {
+      return leftAt - rightAt;
+    }
+    return left.id - right.id;
+  });
+}
+
+function displayChatName(chat: Chat): string {
+  return chat.name?.trim() || chat.identifier?.trim() || `chat ${chat.id}`;
+}
+
+function formatChatTimestamp(value?: string): string {
+  if (!value) {
+    return 'recent';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'recent';
+  }
+
+  const now = new Date();
+  const sameDay = now.toDateString() === date.toDateString();
+  if (sameDay) {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(date);
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+  }).format(date);
+}
+
+function formatMessageTimestamp(value?: string): string {
+  if (!value) {
+    return 'unknown time';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'unknown time';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) {
+    return `${value} b`;
+  }
+
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} kb`;
+  }
+
+  return `${(value / (1024 * 1024)).toFixed(1)} mb`;
 }
 
 function QrScannerPanel({ onPayload }: { onPayload: (value: string) => void }) {
