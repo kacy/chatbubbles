@@ -1300,7 +1300,7 @@ function MessageBubble({ message }: { message: Message }) {
         <div
           className={
             fromMe
-              ? 'rounded-[1.4rem] rounded-br-md bg-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_10px_24px_rgba(10,132,255,0.26)]'
+              ? 'rounded-[1.4rem] rounded-br-md bg-signal px-3.5 py-2.5 text-white shadow-[0_10px_24px_rgba(10,132,255,0.26)]'
               : 'rounded-[1.4rem] rounded-bl-md border border-slate-300/70 bg-slate-200 px-3.5 py-2.5 text-slate-950 shadow-[0_8px_20px_rgba(15,23,42,0.08)]'
           }
         >
@@ -1368,9 +1368,9 @@ function StatusDot({
     idle: 'bg-slate-300',
     loading: 'bg-amber-400',
     refreshing: 'bg-sky-400',
-    ready: 'bg-emerald-500',
+    ready: 'bg-signal',
     connecting: 'bg-amber-400',
-    live: 'bg-emerald-500',
+    live: 'bg-signal',
     error: 'bg-rose-500',
   };
   const label: Record<typeof status, string> = {

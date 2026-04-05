@@ -6,11 +6,11 @@ export default {
     extend: {
       colors: {
         ink: '#0f172a',
-        signal: '#0f766e',
+        signal: '#0A84FF',
         surface: '#f8f9fa',
       },
       fontFamily: {
-        sans: ['"Manrope"', '"Avenir Next"', 'ui-sans-serif', 'system-ui'],
+        sans: ['"Inter"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
     },
   },

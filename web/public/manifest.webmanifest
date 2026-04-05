@@ -4,7 +4,7 @@
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f8fafc",
-  "theme_color": "#0f766e",
+  "theme_color": "#0A84FF",
   "description": "direct browser shell for imsg-bridge over tailscale",
   "icons": [
     {
