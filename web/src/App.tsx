@@ -766,6 +766,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
 
     try {
       const loadedMessages = await listMessages(profile.apiBaseUrl, activeToken, chatId, {
+        attachments: false,
         limit: recentMessageLimit,
       });
       if (requestId !== activeThreadRequest.current) {
@@ -817,6 +818,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
 
     try {
       const olderMessages = await listMessages(profile.apiBaseUrl, token, activeChatId, {
+        attachments: false,
         limit: olderMessagePageSize,
         before: oldestTimestamp,
       });

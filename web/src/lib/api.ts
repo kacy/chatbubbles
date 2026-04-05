@@ -21,6 +21,7 @@ type SessionRequest = {
 type ListMessagesOptions = {
   limit?: number;
   before?: string;
+  attachments?: boolean;
 };
 
 export async function pairClient(
@@ -98,6 +99,9 @@ export async function listMessages(
   });
   if (options.before) {
     query.set('before', options.before);
+  }
+  if (options.attachments === false) {
+    query.set('attachments', '0');
   }
   const response = await jsonRequest<{ messages: Message[] }>(
     `${apiBaseUrl}/v1/chats/${chatId}/messages?${query}`,

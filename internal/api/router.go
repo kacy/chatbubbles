@@ -144,6 +144,18 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		Attachments: true,
 	}
 
+	if raw := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("attachments"))); raw != "" {
+		switch raw {
+		case "1", "true", "yes":
+			opts.Attachments = true
+		case "0", "false", "no":
+			opts.Attachments = false
+		default:
+			writeError(w, http.StatusBadRequest, "bad_request", "attachments must be a boolean")
+			return
+		}
+	}
+
 	if before := strings.TrimSpace(r.URL.Query().Get("before")); before != "" {
 		ts, err := time.Parse(time.RFC3339, before)
 		if err != nil {
@@ -172,7 +184,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, statusForErr(err), "internal", err.Error())
 		return
 	}
-	if s.attachments != nil {
+	if s.attachments != nil && opts.Attachments {
 		s.attachments.DecorateMessages(messages)
 	}
 

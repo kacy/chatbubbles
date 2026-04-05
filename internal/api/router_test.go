@@ -88,9 +88,10 @@ func TestHandleChats(t *testing.T) {
 }
 
 func TestHandleMessages(t *testing.T) {
-	server := NewServer(Config{}, &stubRunner{
+	runner := &stubRunner{
 		messages: []imsg.Message{{ID: 1, ChatID: 7, Text: "hello"}},
-	}, events.NewHub(), nil, nil, nil)
+	}
+	server := NewServer(Config{}, runner, events.NewHub(), nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/chats/7/messages?limit=1", nil)
 	rec := httptest.NewRecorder()
@@ -110,6 +111,29 @@ func TestHandleMessages(t *testing.T) {
 
 	if len(body.Messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(body.Messages))
+	}
+
+	if !runner.lastListMessagesOpts.Attachments {
+		t.Fatalf("expected attachments enabled by default")
+	}
+}
+
+func TestHandleMessagesCanSkipAttachments(t *testing.T) {
+	runner := &stubRunner{
+		messages: []imsg.Message{{ID: 1, ChatID: 7, Text: "hello"}},
+	}
+	server := NewServer(Config{}, runner, events.NewHub(), nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/chats/7/messages?limit=1&attachments=0", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	if runner.lastListMessagesOpts.Attachments {
+		t.Fatalf("expected attachments to be disabled")
 	}
 }
 
@@ -459,6 +483,7 @@ type stubRunner struct {
 	version              string
 	chats                []imsg.Chat
 	messages             []imsg.Message
+	lastListMessagesOpts imsg.ListMessagesOptions
 	sendResult           imsg.SendMessageResult
 	sendAttachmentResult imsg.SendAttachmentResult
 	sentAttachmentReq    imsg.SendAttachmentRequest
@@ -473,7 +498,8 @@ func (s *stubRunner) ListChats(context.Context, int) ([]imsg.Chat, error) {
 	return s.chats, nil
 }
 
-func (s *stubRunner) ListMessages(context.Context, int64, imsg.ListMessagesOptions) ([]imsg.Message, error) {
+func (s *stubRunner) ListMessages(_ context.Context, _ int64, opts imsg.ListMessagesOptions) ([]imsg.Message, error) {
+	s.lastListMessagesOpts = opts
 	return s.messages, nil
 }
 
