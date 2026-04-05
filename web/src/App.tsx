@@ -641,10 +641,12 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  const [threadStatus, setThreadStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>(
-    'idle',
-  );
+  const [status, setStatus] = useState<
+    'idle' | 'loading' | 'refreshing' | 'ready' | 'error'
+  >('idle');
+  const [threadStatus, setThreadStatus] = useState<
+    'idle' | 'loading' | 'refreshing' | 'ready' | 'error'
+  >('idle');
   const [eventsStatus, setEventsStatus] = useState<'idle' | 'connecting' | 'live' | 'error'>(
     'idle',
   );
@@ -672,7 +674,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
   }, [activeChatId]);
 
   useEffect(() => {
-    if (!token || status !== 'ready') {
+    if (!token || (status !== 'ready' && status !== 'refreshing')) {
       setEventsStatus('idle');
       setEventsError(null);
       return;
@@ -781,6 +783,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
           bootChatId = initialCachedChat.id;
           setChats(sortedCachedChats);
           setActiveChatId(initialCachedChat.id);
+          setStatus('refreshing');
           void loadMessagesForChat(initialCachedChat.id, decryptedToken, false);
         }
 
@@ -816,8 +819,10 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setStatus('error');
-          setThreadStatus('error');
+          setStatus(chatsRef.current.length > 0 ? 'ready' : 'error');
+          if (messagesRef.current.length === 0) {
+            setThreadStatus('error');
+          }
           setError(
             loadError instanceof Error
               ? loadError.message
@@ -850,7 +855,9 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
     setActiveChatId(chatId);
 
     if (persistSelection) {
-      await setActiveChat(profile.id, chatId);
+      void setActiveChat(profile.id, chatId).catch((persistError) => {
+        console.error('failed to persist active chat', persistError);
+      });
     }
 
     const cachedMessages = await getCachedMessages(profile.id, chatId);
@@ -871,11 +878,12 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
         console.error('failed to backfill cached chat previews', cacheError);
       });
       setCanLoadOlder(cachedMessages.length >= recentMessageLimit);
+      setThreadStatus('refreshing');
     } else {
       setMessages([]);
       setCanLoadOlder(false);
+      setThreadStatus('loading');
     }
-    setThreadStatus('loading');
     setLoadingOlder(false);
 
     try {
@@ -1048,7 +1056,8 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
           <ChatList
             activeChatId={activeChatId}
             chats={chats}
-            disabled={status !== 'ready'}
+            disabled={status === 'loading' && chats.length === 0}
+            status={status}
             onSelectChat={(chatId) => {
               if (chatId === activeChatId) {
                 return;
@@ -1064,6 +1073,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
             onLoadOlder={() => {
               void loadOlderMessages();
             }}
+            shellStatus={status}
             onReload={() => {
               if (activeChatId !== null) {
                 void loadMessagesForChat(activeChatId, token, false);
@@ -1087,6 +1097,12 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
           ) : null}
 
           {status === 'loading' ? <p>checking the saved bridge token and server reachability…</p> : null}
+          {status === 'refreshing' ? (
+            <p>
+              showing cached state while the bridge refreshes in the background. you can keep
+              browsing the last local data.
+            </p>
+          ) : null}
           {status === 'error' ? (
             <p className="text-rose-700">
               direct bridge check failed: {error}. this usually means the browser cannot
@@ -1104,6 +1120,7 @@ function ChatList(props: {
   chats: Chat[];
   activeChatId: number | null;
   disabled: boolean;
+  status: 'idle' | 'loading' | 'refreshing' | 'ready' | 'error';
   onSelectChat: (chatId: number) => void;
 }) {
   return (
@@ -1114,6 +1131,18 @@ function ChatList(props: {
           {props.chats.length} loaded
         </span>
       </div>
+
+      {props.status === 'refreshing' ? (
+        <div className="mt-3 rounded-2xl bg-sky-50 px-3 py-2 text-xs text-sky-700">
+          refreshing chats in the background…
+        </div>
+      ) : null}
+
+      {props.status === 'loading' && props.chats.length === 0 ? (
+        <div className="mt-3 rounded-2xl bg-white px-3 py-2 text-xs text-slate-500">
+          loading conversations…
+        </div>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         {props.chats.length === 0 ? (
@@ -1163,7 +1192,8 @@ function ThreadView(props: {
   loadingOlder: boolean;
   messages: Message[];
   onLoadOlder: () => void;
-  status: 'idle' | 'loading' | 'ready' | 'error';
+  shellStatus: 'idle' | 'loading' | 'refreshing' | 'ready' | 'error';
+  status: 'idle' | 'loading' | 'refreshing' | 'ready' | 'error';
   statusBadge: ReactNode;
   threadError: string | null;
   onReload: () => void;
@@ -1195,6 +1225,12 @@ function ThreadView(props: {
       </div>
 
       <div className="mt-4 min-h-[28rem] space-y-3 rounded-3xl bg-slate-50 p-4">
+        {props.status === 'refreshing' ? (
+          <div className="rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-700">
+            showing cached messages while the bridge refreshes this thread…
+          </div>
+        ) : null}
+
         {props.activeChat && props.canLoadOlder ? (
           <div className="flex justify-center">
             <button
@@ -1215,9 +1251,13 @@ function ThreadView(props: {
         ) : null}
 
         {props.status === 'loading' ? (
-          <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500">
-            pulling recent messages from the bridge…
-          </div>
+          props.messages.length > 0 ? (
+            <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500">
+              pulling recent messages from the bridge…
+            </div>
+          ) : (
+            <LoadingStack />
+          )
         ) : null}
 
         {props.status === 'error' ? (
@@ -1244,8 +1284,26 @@ function ThreadView(props: {
       </div>
 
       <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-        write actions are still separate. this screen is the real read path first.
+        {props.shellStatus === 'error'
+          ? 'the bridge refresh failed, so the shell is showing the last local state it had.'
+          : 'write actions are still separate. this screen is the real read path first.'}
       </div>
+    </div>
+  );
+}
+
+function LoadingStack() {
+  return (
+    <div className="space-y-3">
+      {[0, 1, 2, 3].map((row) => (
+        <div key={row} className={row % 2 === 0 ? 'flex justify-start' : 'flex justify-end'}>
+          <div className="w-[72%] animate-pulse rounded-3xl bg-white px-4 py-4 shadow-sm">
+            <div className="h-2.5 w-20 rounded-full bg-slate-200" />
+            <div className="mt-3 h-3.5 w-full rounded-full bg-slate-200" />
+            <div className="mt-2 h-3.5 w-2/3 rounded-full bg-slate-200" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1315,11 +1373,19 @@ function MessageBubble({ message }: { message: Message }) {
 function StatusBadge({
   status,
 }: {
-  status: 'idle' | 'loading' | 'ready' | 'error' | 'connecting' | 'live';
+  status:
+    | 'idle'
+    | 'loading'
+    | 'refreshing'
+    | 'ready'
+    | 'error'
+    | 'connecting'
+    | 'live';
 }) {
   const styles: Record<typeof status, string> = {
     idle: 'bg-slate-100 text-slate-500',
     loading: 'bg-amber-100 text-amber-700',
+    refreshing: 'bg-sky-100 text-sky-700',
     ready: 'bg-glow text-signal',
     connecting: 'bg-sky-100 text-sky-700',
     live: 'bg-glow text-signal',

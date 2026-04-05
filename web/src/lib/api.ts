@@ -18,6 +18,8 @@ type SessionRequest = {
   clientType: 'web';
 };
 
+const requestTimeoutMs = 12000;
+
 type ListMessagesOptions = {
   limit?: number;
   before?: string;
@@ -117,13 +119,27 @@ export async function listMessages(
 }
 
 async function jsonRequest<T>(url: string, init: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), requestTimeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    window.clearTimeout(timeout);
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`bridge request timed out after ${Math.round(requestTimeoutMs / 1000)}s`);
+    }
+    throw error;
+  }
+  window.clearTimeout(timeout);
 
   const raw = await response.text();
   let body: unknown = null;
