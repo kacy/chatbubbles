@@ -100,3 +100,13 @@ export type Message = {
   reply_to_guid?: string;
   destination_caller_id?: string;
 };
+
+export type BridgeEvent =
+  | {
+      type: 'heartbeat';
+      ts: string;
+    }
+  | {
+      type: 'new_message' | 'message_updated';
+      data: Message;
+    };

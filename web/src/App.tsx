@@ -30,6 +30,7 @@ import {
 } from './lib/connection';
 import { parsePairPayload } from './lib/qr';
 import type {
+  BridgeEvent,
   Chat,
   CreateSessionResponse,
   Message,
@@ -632,6 +633,9 @@ function SessionPage(props: {
 
 function AppShell({ profile }: { profile: StoredServerProfile }) {
   const activeThreadRequest = useRef(0);
+  const chatsRef = useRef<Chat[]>([]);
+  const messagesRef = useRef<Message[]>([]);
+  const activeChatIdRef = useRef<number | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
@@ -641,8 +645,12 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
   const [threadStatus, setThreadStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     'idle',
   );
+  const [eventsStatus, setEventsStatus] = useState<'idle' | 'connecting' | 'live' | 'error'>(
+    'idle',
+  );
   const [error, setError] = useState<string | null>(null);
   const [threadError, setThreadError] = useState<string | null>(null);
+  const [eventsError, setEventsError] = useState<string | null>(null);
   const [canLoadOlder, setCanLoadOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
@@ -650,6 +658,102 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
     () => chats.find((chat) => chat.id === activeChatId) ?? null,
     [activeChatId, chats],
   );
+
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
+
+  useEffect(() => {
+    if (!token || status !== 'ready') {
+      setEventsStatus('idle');
+      setEventsError(null);
+      return;
+    }
+
+    let cancelled = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer = 0;
+    let reconnectDelay = 1000;
+
+    const connect = () => {
+      if (cancelled) {
+        return;
+      }
+
+      setEventsStatus('connecting');
+      setEventsError(null);
+
+      const url = new URL(`${profile.wsBaseUrl}/v1/events`);
+      url.searchParams.set('token', token);
+
+      socket = new WebSocket(url.toString());
+
+      socket.onopen = () => {
+        if (cancelled) {
+          return;
+        }
+        reconnectDelay = 1000;
+        setEventsStatus('live');
+        setEventsError(null);
+      };
+
+      socket.onmessage = (event) => {
+        if (cancelled) {
+          return;
+        }
+
+        try {
+          const payload = JSON.parse(event.data) as BridgeEvent;
+          if (payload.type === 'heartbeat') {
+            setEventsStatus('live');
+            return;
+          }
+
+          const message = payload.data;
+          setEventsStatus('live');
+          void applyIncomingMessage(message);
+        } catch (wsError) {
+          console.error('failed to parse bridge event', wsError);
+        }
+      };
+
+      socket.onerror = () => {
+        if (cancelled) {
+          return;
+        }
+        setEventsStatus('error');
+        setEventsError('live event stream dropped. retrying…');
+      };
+
+      socket.onclose = () => {
+        if (cancelled) {
+          return;
+        }
+
+        setEventsStatus('connecting');
+        reconnectTimer = window.setTimeout(() => {
+          reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+          connect();
+        }, reconnectDelay);
+      };
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(reconnectTimer);
+      socket?.close();
+    };
+  }, [profile.wsBaseUrl, status, token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -839,6 +943,24 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
     }
   }
 
+  async function applyIncomingMessage(message: Message) {
+    const nextChats = bumpChatActivity(chatsRef.current, message);
+    setChats(nextChats);
+    void saveChats(profile.id, nextChats).catch((cacheError) => {
+      console.error('failed to refresh cached chats from event stream', cacheError);
+    });
+
+    if (message.chat_id !== activeChatIdRef.current) {
+      return;
+    }
+
+    const nextMessages = mergeMessages(messagesRef.current, [message]);
+    setMessages(nextMessages);
+    void saveMessages(profile.id, message.chat_id, nextMessages).catch((cacheError) => {
+      console.error('failed to refresh cached messages from event stream', cacheError);
+    });
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[0.72fr_1.28fr]">
       <aside className="space-y-6">
@@ -858,6 +980,10 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
             <div>
               <dt className="font-medium text-slate-900">expires at</dt>
               <dd>{profile.expiresAt}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-900">live events</dt>
+              <dd>{eventsStatus}{eventsError ? ` · ${eventsError}` : ''}</dd>
             </div>
             {serverInfo ? (
               <>
@@ -892,7 +1018,10 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
               and live websocket updates can layer onto this without changing the auth model.
             </p>
           </div>
-          <StatusBadge status={status} />
+          <div className="flex items-center gap-2">
+            <StatusBadge status={eventsStatus} />
+            <StatusBadge status={status} />
+          </div>
         </div>
 
         <div className="mt-8 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
@@ -1163,11 +1292,17 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
-function StatusBadge({ status }: { status: 'idle' | 'loading' | 'ready' | 'error' }) {
+function StatusBadge({
+  status,
+}: {
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'connecting' | 'live';
+}) {
   const styles: Record<typeof status, string> = {
     idle: 'bg-slate-100 text-slate-500',
     loading: 'bg-amber-100 text-amber-700',
     ready: 'bg-glow text-signal',
+    connecting: 'bg-sky-100 text-sky-700',
+    live: 'bg-glow text-signal',
     error: 'bg-rose-100 text-rose-700',
   };
 
@@ -1276,6 +1411,28 @@ function mergeMessages(current: Message[], older: Message[]): Message[] {
 
 function messageKey(message: Message): string {
   return message.guid?.trim() || String(message.id);
+}
+
+function bumpChatActivity(chats: Chat[], message: Message): Chat[] {
+  const timestamp = message.created_at;
+  const nextChats = [...chats];
+  const index = nextChats.findIndex((chat) => chat.id === message.chat_id);
+
+  if (index >= 0) {
+    nextChats[index] = {
+      ...nextChats[index],
+      last_message_at: timestamp || nextChats[index].last_message_at,
+    };
+    return sortChats(nextChats);
+  }
+
+  nextChats.unshift({
+    id: message.chat_id,
+    identifier: message.sender || `chat ${message.chat_id}`,
+    last_message_at: timestamp,
+  });
+
+  return sortChats(nextChats);
 }
 
 function QrScannerPanel({ onPayload }: { onPayload: (value: string) => void }) {
