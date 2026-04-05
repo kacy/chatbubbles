@@ -46,7 +46,7 @@ type AppState = {
   loading: boolean;
 };
 
-const recentMessageLimit = 40;
+const recentMessageLimit = 20;
 const olderMessagePageSize = 60;
 
 function defaultClientName() {
