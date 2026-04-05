@@ -69,6 +69,7 @@ export type Chat = {
   identifier?: string;
   service?: string;
   last_message_at?: string;
+  preview_text?: string;
 };
 
 export type Attachment = {

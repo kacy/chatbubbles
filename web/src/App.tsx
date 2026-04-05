@@ -791,7 +791,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
 
         if (!cancelled) {
           setServerInfo(server);
-          const sortedChats = sortChats(loadedChats);
+          const sortedChats = sortChats(mergeLoadedChats(sortedCachedChats, loadedChats));
           setChats(sortedChats);
           void saveChats(profile.id, sortedChats).catch((cacheError) => {
             console.error('failed to cache chats', cacheError);
@@ -859,7 +859,17 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
     }
 
     if (cachedMessages.length > 0) {
-      setMessages(sortMessages(cachedMessages));
+      const sortedCachedMessages = sortMessages(cachedMessages);
+      setMessages(sortedCachedMessages);
+      const nextChats = updateChatPreview(
+        chatsRef.current,
+        chatId,
+        latestMessagePreview(sortedCachedMessages),
+      );
+      setChats(nextChats);
+      void saveChats(profile.id, nextChats).catch((cacheError) => {
+        console.error('failed to backfill cached chat previews', cacheError);
+      });
       setCanLoadOlder(cachedMessages.length >= recentMessageLimit);
     } else {
       setMessages([]);
@@ -881,6 +891,11 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
       setMessages(sortedMessages);
       setCanLoadOlder(loadedMessages.length >= recentMessageLimit);
       setThreadStatus('ready');
+      const nextChats = updateChatPreview(chatsRef.current, chatId, latestMessagePreview(sortedMessages));
+      setChats(nextChats);
+      void saveChats(profile.id, nextChats).catch((cacheError) => {
+        console.error('failed to cache chat previews', cacheError);
+      });
       void saveMessages(profile.id, chatId, sortedMessages).catch((cacheError) => {
         console.error('failed to cache messages', cacheError);
       });
@@ -929,6 +944,11 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
       const mergedMessages = mergeMessages(messages, olderMessages);
       setMessages(mergedMessages);
       setCanLoadOlder(olderMessages.length >= olderMessagePageSize);
+      const nextChats = updateChatPreview(chatsRef.current, activeChatId, latestMessagePreview(mergedMessages));
+      setChats(nextChats);
+      void saveChats(profile.id, nextChats).catch((cacheError) => {
+        console.error('failed to cache chat previews after older load', cacheError);
+      });
       void saveMessages(profile.id, activeChatId, mergedMessages).catch((cacheError) => {
         console.error('failed to cache merged messages', cacheError);
       });
@@ -1121,7 +1141,7 @@ function ChatList(props: {
                       {displayChatName(chat)}
                     </p>
                     <p className="mt-1 truncate text-xs text-slate-500">
-                      {chat.identifier || chat.service || `chat ${chat.id}`}
+                      {chat.preview_text || chat.identifier || chat.service || `chat ${chat.id}`}
                     </p>
                   </div>
                   <span className="shrink-0 text-[11px] uppercase tracking-[0.16em] text-slate-400">
@@ -1413,8 +1433,76 @@ function messageKey(message: Message): string {
   return message.guid?.trim() || String(message.id);
 }
 
+function mergeLoadedChats(cached: Chat[], loaded: Chat[]): Chat[] {
+  const previews = new Map<number, string>();
+  for (const chat of cached) {
+    if (chat.preview_text) {
+      previews.set(chat.id, chat.preview_text);
+    }
+  }
+
+  return loaded.map((chat) => ({
+    ...chat,
+    preview_text: previews.get(chat.id) || chat.preview_text,
+  }));
+}
+
+function updateChatPreview(chats: Chat[], chatId: number, previewText: string): Chat[] {
+  if (!previewText) {
+    return chats;
+  }
+
+  let changed = false;
+  const nextChats = chats.map((chat) => {
+    if (chat.id !== chatId) {
+      return chat;
+    }
+    if (chat.preview_text === previewText) {
+      return chat;
+    }
+    changed = true;
+    return { ...chat, preview_text: previewText };
+  });
+
+  return changed ? nextChats : chats;
+}
+
+function latestMessagePreview(messages: Message[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const preview = summarizeMessage(messages[index]);
+    if (preview) {
+      return preview;
+    }
+  }
+
+  return '';
+}
+
+function summarizeMessage(message: Message): string {
+  const text = message.text?.trim();
+  if (text) {
+    return text.replace(/\s+/g, ' ').slice(0, 140);
+  }
+
+  const attachmentCount = message.attachments?.length ?? 0;
+  if (attachmentCount > 0) {
+    if (attachmentCount === 1) {
+      return message.is_from_me ? 'you sent an attachment' : 'attachment';
+    }
+    return message.is_from_me ? `you sent ${attachmentCount} attachments` : `${attachmentCount} attachments`;
+  }
+
+  const reactionCount = message.reactions?.length ?? 0;
+  if (reactionCount > 0) {
+    return reactionCount === 1 ? 'reaction update' : `${reactionCount} reactions`;
+  }
+
+  return '';
+}
+
 function bumpChatActivity(chats: Chat[], message: Message): Chat[] {
   const timestamp = message.created_at;
+  const previewText = summarizeMessage(message);
   const nextChats = [...chats];
   const index = nextChats.findIndex((chat) => chat.id === message.chat_id);
 
@@ -1422,6 +1510,7 @@ function bumpChatActivity(chats: Chat[], message: Message): Chat[] {
     nextChats[index] = {
       ...nextChats[index],
       last_message_at: timestamp || nextChats[index].last_message_at,
+      preview_text: previewText || nextChats[index].preview_text,
     };
     return sortChats(nextChats);
   }
@@ -1430,6 +1519,7 @@ function bumpChatActivity(chats: Chat[], message: Message): Chat[] {
     id: message.chat_id,
     identifier: message.sender || `chat ${message.chat_id}`,
     last_message_at: timestamp,
+    preview_text: previewText,
   });
 
   return sortChats(nextChats);
