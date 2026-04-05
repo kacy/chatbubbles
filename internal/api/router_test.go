@@ -151,6 +151,14 @@ func TestHandleMessagesUsesHistoryCache(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
 		}
+
+		expectedCache := "miss"
+		if i == 1 {
+			expectedCache = "hit"
+		}
+		if got := rec.Header().Get("X-Bridge-History-Cache"); got != expectedCache {
+			t.Fatalf("expected cache header %q, got %q", expectedCache, got)
+		}
 	}
 
 	if runner.listMessagesCalls != 1 {

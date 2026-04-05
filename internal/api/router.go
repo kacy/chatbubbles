@@ -186,10 +186,14 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	if s.history != nil {
 		if cached, ok := s.history.Get(chatID, opts); ok {
+			w.Header().Set("X-Bridge-History-Cache", "hit")
+			w.Header().Set("X-Bridge-History-Load-Ms", "0")
 			writeJSON(w, http.StatusOK, map[string][]imsg.Message{"messages": cached})
 			return
 		}
 	}
+
+	start := time.Now()
 	messages, err := s.runner.ListMessages(r.Context(), chatID, opts)
 	if err != nil {
 		writeError(w, statusForErr(err), "internal", err.Error())
@@ -201,6 +205,9 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if s.history != nil {
 		s.history.Put(chatID, opts, messages)
 	}
+
+	w.Header().Set("X-Bridge-History-Cache", "miss")
+	w.Header().Set("X-Bridge-History-Load-Ms", strconv.FormatInt(time.Since(start).Milliseconds(), 10))
 
 	writeJSON(w, http.StatusOK, map[string][]imsg.Message{"messages": messages})
 }
