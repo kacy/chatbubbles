@@ -54,7 +54,7 @@ export function deriveBrowserPairTarget(host: string): BrowserPairTarget {
   }
 
   const normalized = trimmed.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-  const browserHost = stripDefaultPort(normalized);
+  const browserHost = browserSafeHost(normalized);
 
   return {
     bridgeHost: normalized,
@@ -62,9 +62,51 @@ export function deriveBrowserPairTarget(host: string): BrowserPairTarget {
   };
 }
 
-function stripDefaultPort(host: string): string {
-  if (host.endsWith(':443')) {
-    return host.slice(0, -4);
+export function requireBrowserSafeHost(host: string): string {
+  const trimmed = host.trim();
+  if (!trimmed) {
+    throw new Error('browser host is required');
   }
-  return host;
+
+  const normalized = trimmed.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  const safeHost = browserSafeHost(normalized);
+  if (!safeHost) {
+    throw new Error(
+      'browser host must be a browser-trusted https hostname, like bridge.your-tailnet.ts.net, not a raw ip or :8443 endpoint',
+    );
+  }
+
+  return safeHost;
+}
+
+function browserSafeHost(host: string): string {
+  const withScheme = /^https?:\/\//i.test(host) ? host : `https://${host}`;
+  const url = new URL(withScheme);
+
+  if (url.protocol !== 'https:') {
+    return '';
+  }
+
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    return '';
+  }
+
+  const hostname = url.hostname.trim();
+  if (!hostname || isIPAddress(hostname)) {
+    return '';
+  }
+
+  if (url.port && url.port !== '443') {
+    return '';
+  }
+
+  return url.host;
+}
+
+function isIPAddress(value: string): boolean {
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(value)) {
+    return true;
+  }
+
+  return value.includes(':');
 }

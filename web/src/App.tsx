@@ -27,6 +27,7 @@ import {
   buildProfileDraft,
   deriveApiBaseUrl,
   deriveBrowserPairTarget,
+  requireBrowserSafeHost,
 } from './lib/connection';
 import { parsePairPayload } from './lib/qr';
 import type {
@@ -343,7 +344,8 @@ function PairPage(props: {
 
     try {
       const payload = parsePairPayload(payloadText);
-      const targetHost = browserHost.trim() || deriveBrowserPairTarget(payload.h).suggestedBrowserHost;
+      const fallbackHost = deriveBrowserPairTarget(payload.h).suggestedBrowserHost;
+      const targetHost = requireBrowserSafeHost(browserHost.trim() || fallbackHost);
       const apiBaseUrl = deriveApiBaseUrl(targetHost);
       const pairResult = await pairClient(apiBaseUrl, {
         code: payload.c,
@@ -413,7 +415,7 @@ function PairPage(props: {
               placeholder="bridge-name.your-tailnet.ts.net"
             />
             <p className="mt-1.5 text-xs text-slate-400">
-              prefer the <code>*.ts.net</code> serve host for browser connections.
+              use a browser-trusted https hostname here, usually your <code>*.ts.net</code> serve host.
             </p>
           </label>
 
@@ -437,7 +439,7 @@ function PairPage(props: {
                 host: <code>{parsedPayload.h}</code>
               </p>
               <p className="mt-0.5 break-all">
-                target: <code>{browserHost || deriveBrowserPairTarget(parsedPayload.h).suggestedBrowserHost}</code>
+                target: <code>{browserHost || deriveBrowserPairTarget(parsedPayload.h).suggestedBrowserHost || 'enter your browser-safe host'}</code>
               </p>
             </div>
           ) : null}
@@ -478,7 +480,7 @@ function SessionPage(props: {
     }
 
     let cancelled = false;
-    const apiBaseUrl = deriveApiBaseUrl(host);
+    const apiBaseUrl = deriveApiBaseUrl(requireBrowserSafeHost(host));
     const timer = window.setInterval(() => {
       pollSession(apiBaseUrl, session.session_id)
         .then(async (result) => {
@@ -524,7 +526,7 @@ function SessionPage(props: {
     setError(null);
 
     try {
-      const apiBaseUrl = deriveApiBaseUrl(host);
+      const apiBaseUrl = deriveApiBaseUrl(requireBrowserSafeHost(host));
       const created = await createSession(apiBaseUrl, {
         clientName,
         clientType: 'web',
@@ -555,6 +557,9 @@ function SessionPage(props: {
               onChange={(event) => setHost(event.target.value)}
               placeholder="bridge-name.your-tailnet.ts.net"
             />
+            <p className="mt-1.5 text-xs text-slate-400">
+              use the browser-safe https hostname, not the direct bridge ip or <code>:8443</code>.
+            </p>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-medium text-slate-700">client name</span>
