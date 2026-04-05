@@ -38,6 +38,7 @@ type Server struct {
 	auth        Authenticator
 	pairing     *auth.Service
 	hub         *events.Hub
+	history     *messageHistoryCache
 	limiter     *rateLimiter
 	runner      Runner
 	webhooks    WebhookService
@@ -49,6 +50,7 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service
 		cfg:         cfg,
 		pairing:     pairing,
 		hub:         hub,
+		history:     newMessageHistoryCache(30 * time.Minute),
 		limiter:     newRateLimiter(),
 		runner:      runner,
 		webhooks:    webhooks,
@@ -56,6 +58,9 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service
 	}
 	if pairing != nil {
 		s.auth = pairing
+	}
+	if hub != nil {
+		s.watchHistoryInvalidation()
 	}
 
 	if s.cfg.TailscaleIP == "" {
@@ -144,6 +149,18 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		Attachments: true,
 	}
 
+	if raw := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("attachments"))); raw != "" {
+		switch raw {
+		case "1", "true", "yes":
+			opts.Attachments = true
+		case "0", "false", "no":
+			opts.Attachments = false
+		default:
+			writeError(w, http.StatusBadRequest, "bad_request", "attachments must be a boolean")
+			return
+		}
+	}
+
 	if before := strings.TrimSpace(r.URL.Query().Get("before")); before != "" {
 		ts, err := time.Parse(time.RFC3339, before)
 		if err != nil {
@@ -167,14 +184,30 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.history != nil {
+		if cached, ok := s.history.Get(chatID, opts); ok {
+			w.Header().Set("X-Bridge-History-Cache", "hit")
+			w.Header().Set("X-Bridge-History-Load-Ms", "0")
+			writeJSON(w, http.StatusOK, map[string][]imsg.Message{"messages": cached})
+			return
+		}
+	}
+
+	start := time.Now()
 	messages, err := s.runner.ListMessages(r.Context(), chatID, opts)
 	if err != nil {
 		writeError(w, statusForErr(err), "internal", err.Error())
 		return
 	}
-	if s.attachments != nil {
+	if s.attachments != nil && opts.Attachments {
 		s.attachments.DecorateMessages(messages)
 	}
+	if s.history != nil {
+		s.history.Put(chatID, opts, messages)
+	}
+
+	w.Header().Set("X-Bridge-History-Cache", "miss")
+	w.Header().Set("X-Bridge-History-Load-Ms", strconv.FormatInt(time.Since(start).Milliseconds(), 10))
 
 	writeJSON(w, http.StatusOK, map[string][]imsg.Message{"messages": messages})
 }
@@ -210,6 +243,24 @@ func statusForErr(err error) int {
 	}
 
 	return http.StatusInternalServerError
+}
+
+func (s *Server) watchHistoryInvalidation() {
+	eventsCh, _ := s.hub.Subscribe(32)
+
+	go func() {
+		for event := range eventsCh {
+			message, ok := event.Data.(imsg.Message)
+			if !ok {
+				continue
+			}
+			if message.ChatID == 0 || s.history == nil {
+				continue
+			}
+
+			s.history.InvalidateChat(message.ChatID)
+		}
+	}()
 }
 
 func detectTailscaleIP() string {

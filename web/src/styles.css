@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body,
+  #root {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  body {
+    @apply bg-white text-ink antialiased;
+    font-family: 'Manrope', sans-serif;
+  }
+
+  input,
+  textarea,
+  button,
+  select {
+    @apply outline-none;
+  }
+}
+
+@layer components {
+  .field {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .field:focus {
+    @apply border-signal/40;
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.08);
+  }
+
+  .button-primary {
+    @apply inline-flex items-center justify-center rounded-lg bg-signal px-4 py-2.5 text-sm font-semibold text-white;
+    transition: background-color 150ms ease;
+  }
+
+  .button-primary:hover {
+    @apply bg-signal/90;
+  }
+
+  .button-primary:disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+
+  .button-secondary {
+    @apply inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700;
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+
+  .button-secondary:hover {
+    @apply border-slate-300 bg-slate-50;
+  }
+
+  .toolbar {
+    @apply flex items-center gap-3 border-b border-slate-100 px-4 py-3;
+  }
+
+  .avatar {
+    @apply flex shrink-0 items-center justify-center rounded-full bg-signal/10 text-sm font-semibold text-signal;
+  }
+
+  .chat-item {
+    @apply flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors;
+  }
+
+  .chat-item:hover {
+    @apply bg-slate-50;
+  }
+
+  .chat-item--active {
+    @apply bg-signal/5 border-l-2 border-signal;
+  }
+}
