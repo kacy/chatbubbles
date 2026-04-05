@@ -5,6 +5,11 @@ export type PairPayload = {
   v: number;
 };
 
+export type BrowserPairTarget = {
+  bridgeHost: string;
+  suggestedBrowserHost: string;
+};
+
 export type EncryptedValue = {
   cipherText: string;
   iv: string;

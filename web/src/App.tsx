@@ -15,7 +15,11 @@ import {
   saveProfile,
   setActiveProfile,
 } from './lib/db';
-import { buildProfileDraft, deriveApiBaseUrl } from './lib/connection';
+import {
+  buildProfileDraft,
+  deriveApiBaseUrl,
+  deriveBrowserPairTarget,
+} from './lib/connection';
 import { parsePairPayload } from './lib/qr';
 import type {
   CreateSessionResponse,
@@ -293,9 +297,32 @@ function PairPage(props: {
   const navigate = useNavigate();
   const [clientName, setClientName] = useState(defaultClientName);
   const [payloadText, setPayloadText] = useState('');
+  const [browserHost, setBrowserHost] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [parsedPayload, setParsedPayload] = useState<PairPayload | null>(null);
+
+  useEffect(() => {
+    try {
+      if (!payloadText.trim()) {
+        setParsedPayload(null);
+        setBrowserHost('');
+        return;
+      }
+
+      const payload = parsePairPayload(payloadText);
+      setParsedPayload(payload);
+      setBrowserHost((current) => {
+        if (current.trim()) {
+          return current;
+        }
+        return deriveBrowserPairTarget(payload.h).suggestedBrowserHost;
+      });
+    } catch {
+      setParsedPayload(null);
+    }
+  }, [payloadText]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -304,7 +331,8 @@ function PairPage(props: {
 
     try {
       const payload = parsePairPayload(payloadText);
-      const apiBaseUrl = deriveApiBaseUrl(payload.h);
+      const targetHost = browserHost.trim() || deriveBrowserPairTarget(payload.h).suggestedBrowserHost;
+      const apiBaseUrl = deriveApiBaseUrl(targetHost);
       const pairResult = await pairClient(apiBaseUrl, {
         code: payload.c,
         clientName,
@@ -313,7 +341,7 @@ function PairPage(props: {
 
       await props.onSaveProfile({
         profileName: pairResult.server_name,
-        host: payload.h,
+        host: targetHost,
         tlsFingerprint: payload.fp,
         token: pairResult.token,
         scopes: pairResult.scopes,
@@ -359,6 +387,23 @@ function PairPage(props: {
             />
           </label>
 
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">
+              browser host
+            </span>
+            <input
+              className="field"
+              value={browserHost}
+              onChange={(event) => setBrowserHost(event.target.value)}
+              placeholder="bridge-name.your-tailnet.ts.net"
+            />
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              for the web shell, prefer the private <code>*.ts.net</code> serve host.
+              raw <code>100.x</code> bridge hosts often fail in browsers because the
+              browser cannot trust the bridge’s self-signed cert directly.
+            </p>
+          </label>
+
           <div className="flex flex-wrap gap-3">
             <button className="button-primary" disabled={busy} type="submit">
               {busy ? 'pairing…' : 'pair this browser'}
@@ -371,6 +416,18 @@ function PairPage(props: {
               {scannerOpen ? 'close camera scan' : 'scan with camera'}
             </button>
           </div>
+
+          {parsedPayload ? (
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              <p className="font-medium text-slate-900">pairing payload detected</p>
+              <p className="mt-2 break-all">
+                bridge host in qr: <code>{parsedPayload.h}</code>
+              </p>
+              <p className="mt-1 break-all">
+                browser target: <code>{browserHost || deriveBrowserPairTarget(parsedPayload.h).suggestedBrowserHost}</code>
+              </p>
+            </div>
+          ) : null}
 
           {error ? (
             <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -391,7 +448,7 @@ function PairPage(props: {
         )}
         <InfoCard
           title="what gets stored"
-          body="the shell saves the selected host, websocket base, tls fingerprint, encrypted token, expiry metadata, and local shell state."
+          body="the shell saves the selected browser host, websocket base, tls fingerprint, encrypted token, expiry metadata, and local shell state."
         />
       </section>
     </div>
@@ -497,7 +554,7 @@ function SessionPage(props: {
               className="field"
               value={host}
               onChange={(event) => setHost(event.target.value)}
-              placeholder="100.64.0.3:8443"
+              placeholder="bridge-name.your-tailnet.ts.net"
             />
           </label>
           <label className="block">
