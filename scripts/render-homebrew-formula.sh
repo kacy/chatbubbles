@@ -32,19 +32,17 @@ amd64_url="$release_base_url/chatbubbles_${version}_darwin_amd64.tar.gz"
 
 cat <<EOF
 class Chatbubbles < Formula
-  desc "small https api for iMessage over tailscale"
+  desc "Small HTTPS API for iMessage over Tailscale"
   homepage "https://github.com/$repo"
   version "$version"
 
-  depends_on macos: :sonoma
   depends_on "imsg"
+  depends_on macos: :sonoma
 
-  on_arm do
+  if Hardware::CPU.arm?
     url "$arm64_url"
     sha256 "$arm64_sha"
-  end
-
-  on_intel do
+  else
     url "$amd64_url"
     sha256 "$amd64_sha"
   end
