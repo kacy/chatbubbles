@@ -19,6 +19,7 @@ today, `chatbubbles` supports:
 still landing:
 
 - a more polished install story for running it as a background service
+- a homebrew tap, with notes in [`docs/homebrew.md`](docs/homebrew.md)
 
 ## what you need
 

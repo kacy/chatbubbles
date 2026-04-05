@@ -4,7 +4,7 @@ VERSION := $(shell tr -d '\n' < VERSION)
 BUILD_LDFLAGS := -X github.com/kacy/chatbubbles/internal/buildinfo.Version=$(VERSION)
 IMSG_BIN ?= $(shell [ -x ../imsg/bin/imsg ] && printf '%s' ../imsg/bin/imsg || printf '%s' imsg)
 
-.PHONY: build build-cli test fmt run clean dist release release-patch release-minor version web-install web-dev web-build web-test
+.PHONY: build build-cli test fmt run clean dist release release-patch release-minor version web-install web-dev web-build web-test homebrew-formula
 
 	build:
 	mkdir -p bin
@@ -52,3 +52,10 @@ web-build:
 
 web-test:
 	cd web && npm test
+
+homebrew-formula:
+	@if [ -z "$(ARM64_SHA)" ] || [ -z "$(AMD64_SHA)" ]; then \
+		echo "usage: make homebrew-formula ARM64_SHA=<arm64-sha256> AMD64_SHA=<amd64-sha256> [VERSION=x.y.z]"; \
+		exit 1; \
+	fi
+	sh ./scripts/render-homebrew-formula.sh "$(VERSION)" "$(ARM64_SHA)" "$(AMD64_SHA)"
