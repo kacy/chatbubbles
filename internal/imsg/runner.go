@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -19,11 +21,56 @@ type Runner struct {
 }
 
 func NewRunner(binary string) *Runner {
-	if strings.TrimSpace(binary) == "" {
-		binary = "imsg"
+	return &Runner{binary: ResolveBinary(binary)}
+}
+
+func ResolveBinary(binary string) string {
+	if binary := strings.TrimSpace(binary); binary != "" {
+		return binary
 	}
 
-	return &Runner{binary: binary}
+	if binary := strings.TrimSpace(os.Getenv("IMSGBRIDGE_IMSG_BIN")); binary != "" {
+		return binary
+	}
+
+	for _, candidate := range defaultBinaryCandidates() {
+		if isExecutableFile(candidate) {
+			return candidate
+		}
+	}
+
+	return "imsg"
+}
+
+func (r *Runner) Binary() string {
+	return r.binary
+}
+
+func defaultBinaryCandidates() []string {
+	candidates := make([]string, 0, 3)
+
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, filepath.Join(cwd, "..", "imsg", "bin", "imsg"))
+	}
+
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "..", "imsg", "bin", "imsg"),
+			filepath.Join(exeDir, "..", "..", "imsg", "bin", "imsg"),
+		)
+	}
+
+	return candidates
+}
+
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+
+	return info.Mode()&0o111 != 0
 }
 
 func (r *Runner) Version(ctx context.Context) (string, error) {

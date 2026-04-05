@@ -29,12 +29,14 @@ import (
 func main() {
 	var cfg api.Config
 	var dataDir string
+	var imsgBinary string
 	var socketPath string
 
 	flag.StringVar(&cfg.ListenAddr, "listen", ":8443", "http listen address")
 	flag.StringVar(&cfg.ServerName, "server-name", hostname(), "server name")
 	flag.StringVar(&cfg.TailscaleIP, "tailscale-ip", "", "override detected tailscale ip")
 	flag.StringVar(&dataDir, "data-dir", defaultDataDir(), "data directory")
+	flag.StringVar(&imsgBinary, "imsg-bin", "", "path to the imsg binary")
 	flag.StringVar(&socketPath, "socket", "", "control socket path")
 	flag.Parse()
 
@@ -58,7 +60,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	runner := imsg.NewRunner("")
+	runner := imsg.NewRunner(imsgBinary)
 	hub := events.NewHub()
 	stateStore := store.New(filepath.Join(dataDir, "config.json"))
 	state, err := stateStore.Load()
@@ -154,6 +156,7 @@ func main() {
 	}()
 
 	log.Printf("serving https on %s", cfg.ListenAddr)
+	log.Printf("imsg binary %s", runner.Binary())
 	log.Printf("control socket %s", socketPath)
 	log.Printf("tls fingerprint %s", material.Fingerprint)
 	logPairingWarnings(cfg.ListenAddr, cfg.TailscaleIP, pairHost)

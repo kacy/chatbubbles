@@ -2,6 +2,7 @@ APP := imsg-bridge
 CLI := imsg-bridge-cli
 VERSION := $(shell tr -d '\n' < VERSION)
 BUILD_LDFLAGS := -X github.com/kacy/imsg-bridge/internal/buildinfo.Version=$(VERSION)
+IMSG_BIN ?= $(shell [ -x ../imsg/bin/imsg ] && printf '%s' ../imsg/bin/imsg || printf '%s' imsg)
 
 .PHONY: build build-cli test fmt run clean dist release release-patch release-minor version web-install web-dev web-build web-test
 
@@ -20,7 +21,7 @@ fmt:
 	gofmt -w ./cmd ./internal
 
 run:
-	go run -ldflags "$(BUILD_LDFLAGS)" ./cmd/imsg-bridge
+	go run -ldflags "$(BUILD_LDFLAGS)" ./cmd/imsg-bridge -imsg-bin "$(IMSG_BIN)"
 
 clean:
 	rm -rf bin dist web/dist web/*.tsbuildinfo web/vite.config.js web/vite.config.d.ts web/tailwind.config.js web/tailwind.config.d.ts

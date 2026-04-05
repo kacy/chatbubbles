@@ -28,6 +28,8 @@ still landing:
 - [`imsg`](https://github.com/steipete/imsg): `brew install imsg`
 - [tailscale](https://tailscale.com/) installed and connected
 
+for local bridge work, the daemon also accepts `IMSGBRIDGE_IMSG_BIN=/path/to/imsg` or `-imsg-bin /path/to/imsg` if you need to point at a patched checkout before upstream catches up.
+
 ## quick start
 
 ```sh
