@@ -124,39 +124,52 @@ function App() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+    <div className="mx-auto min-h-screen max-w-7xl px-4 pb-24 pt-4 sm:px-6 sm:pb-8 lg:px-8">
       <TopBar activeProfile={activeProfile} />
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <HomePage
-              profiles={state.profiles}
-              activeProfileId={state.activeProfileId}
-              onActivate={activateProfile}
-              onDelete={removeProfile}
-            />
-          }
-        />
-        <Route
-          path="/pair"
-          element={<PairPage onSaveProfile={saveAndActivateProfile} />}
-        />
-        <Route
-          path="/session"
-          element={<SessionPage onSaveProfile={saveAndActivateProfile} />}
-        />
-        <Route
-          path="/app"
-          element={
-            activeProfile ? (
-              <AppShell profile={activeProfile} />
-            ) : (
-              <Navigate replace to="/" />
-            )
-          }
-        />
-      </Routes>
+      <main className="mt-4">
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <HomePage
+                profiles={state.profiles}
+                activeProfileId={state.activeProfileId}
+                onActivate={activateProfile}
+                onDelete={removeProfile}
+              />
+            }
+          />
+          <Route
+            path="/pair"
+            element={<PairPage onSaveProfile={saveAndActivateProfile} />}
+          />
+          <Route
+            path="/session"
+            element={<SessionPage onSaveProfile={saveAndActivateProfile} />}
+          />
+          <Route
+            path="/settings"
+            element={
+              activeProfile ? (
+                <SettingsPage profile={activeProfile} />
+              ) : (
+                <Navigate replace to="/" />
+              )
+            }
+          />
+          <Route
+            path="/app"
+            element={
+              activeProfile ? (
+                <AppShell profile={activeProfile} />
+              ) : (
+                <Navigate replace to="/" />
+              )
+            }
+          />
+        </Routes>
+      </main>
+      <BottomNav hasActiveProfile={Boolean(activeProfile)} />
     </div>
   );
 }
@@ -165,34 +178,49 @@ function TopBar({ activeProfile }: { activeProfile: StoredServerProfile | null }
   const location = useLocation();
 
   return (
-    <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <p className="pill">direct over tailscale</p>
-        <h1 className="mt-3 text-3xl font-extrabold tracking-tight">imsg-bridge web</h1>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          cloudflare hosts the shell. this app talks straight to the selected
-          home bridge over tailscale.
-        </p>
+    <header className="panel sticky top-4 z-20 rounded-[32px] px-4 py-4 sm:px-6">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="pill">material shell</p>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-signal text-lg font-bold text-white shadow-sm">
+              i
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+                imsg-bridge
+              </h1>
+              <p className="truncate text-sm text-slate-500">
+                private messaging over tailscale
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="hidden items-center gap-2 sm:flex">
+          <NavLink to="/" currentPath={location.pathname}>
+            home
+          </NavLink>
+          <NavLink to="/app" currentPath={location.pathname}>
+            chats
+          </NavLink>
+          <NavLink to="/settings" currentPath={location.pathname}>
+            settings
+          </NavLink>
+        </div>
       </div>
-      <nav className="flex flex-wrap gap-2">
-        <NavLink to="/" currentPath={location.pathname}>
-          profiles
-        </NavLink>
-        <NavLink to="/pair" currentPath={location.pathname}>
-          pair
-        </NavLink>
-        <NavLink to="/session" currentPath={location.pathname}>
-          session
-        </NavLink>
-        <NavLink to="/app" currentPath={location.pathname}>
-          app
-        </NavLink>
-        {activeProfile ? (
-          <span className="inline-flex items-center rounded-2xl bg-white/70 px-3 py-2 text-sm font-medium text-slate-700">
-            active: {activeProfile.name}
-          </span>
-        ) : null}
-      </nav>
+
+      {activeProfile ? (
+        <div className="mt-4 flex items-center justify-between rounded-[28px] bg-white/75 px-4 py-3 text-sm text-slate-600">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">active bridge</p>
+            <p className="mt-1 truncate font-medium text-slate-900">{activeProfile.name}</p>
+          </div>
+          <Link className="button-secondary hidden sm:inline-flex" to="/settings">
+            manage
+          </Link>
+        </div>
+      ) : null}
     </header>
   );
 }
@@ -213,6 +241,36 @@ function NavLink(props: { to: string; currentPath: string; children: string }) {
   );
 }
 
+function BottomNav({ hasActiveProfile }: { hasActiveProfile: boolean }) {
+  const location = useLocation();
+
+  return (
+    <nav className="fixed bottom-4 left-4 right-4 z-30 sm:hidden">
+      <div className="panel flex items-center justify-around rounded-[28px] px-3 py-2">
+        <BottomNavItem currentPath={location.pathname} label="home" to="/" />
+        <BottomNavItem currentPath={location.pathname} label="chats" to={hasActiveProfile ? '/app' : '/'} />
+        <BottomNavItem currentPath={location.pathname} label="settings" to={hasActiveProfile ? '/settings' : '/'} />
+      </div>
+    </nav>
+  );
+}
+
+function BottomNavItem(props: { currentPath: string; label: string; to: string }) {
+  const active = props.currentPath === props.to;
+  return (
+    <Link
+      className={
+        active
+          ? 'flex min-w-[88px] flex-col items-center rounded-2xl bg-glow px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-signal'
+          : 'flex min-w-[88px] flex-col items-center rounded-2xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500'
+      }
+      to={props.to}
+    >
+      {props.label}
+    </Link>
+  );
+}
+
 function HomePage(props: {
   profiles: StoredServerProfile[];
   activeProfileId: string | null;
@@ -220,41 +278,48 @@ function HomePage(props: {
   onDelete: (id: string) => Promise<void>;
 }) {
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-      <section className="panel p-6 sm:p-8">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="pill">saved bridges</p>
-            <h2 className="mt-4 text-2xl font-semibold">server profiles live on this device</h2>
-            <p className="mt-3 text-sm text-slate-600">
-              profiles, encrypted tokens, and shell state stay local in the browser.
-            </p>
+    <div className="grid gap-6 lg:grid-cols-[1.12fr_0.88fr]">
+      <section className="panel overflow-hidden p-6 sm:p-8">
+        <div className="rounded-[28px] bg-gradient-to-br from-signal/14 via-white to-sky-100 px-5 py-6 sm:px-6">
+          <p className="pill">your bridges</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">
+            pick the server this device should feel closest to
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+            this browser keeps bridge profiles, tokens, recent chats, and message cache locally
+            so it can come back up like an app instead of a blank page.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link className="button-primary" to="/pair">
+              pair with qr
+            </Link>
+            <Link className="button-secondary" to="/session">
+              use approval code
+            </Link>
           </div>
-          <Link className="button-primary" to="/pair">
-            add bridge
-          </Link>
         </div>
 
         <div className="mt-6 space-y-4">
           {props.profiles.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
+            <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
               no bridge profiles yet. pair from a qr code or start a delegated session.
             </div>
           ) : (
             props.profiles.map((profile) => (
               <article
                 key={profile.id}
-                className="rounded-3xl border border-slate-200 bg-white p-5"
+                className={
+                  props.activeProfileId === profile.id
+                    ? 'rounded-[28px] border border-signal/20 bg-glow/70 p-5'
+                    : 'rounded-[28px] border border-slate-200 bg-white p-5'
+                }
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold">{profile.name}</h3>
-                    <p className="mt-2 break-all text-sm text-slate-600">{profile.apiBaseUrl}</p>
-                    <p className="mt-1 break-all text-xs text-slate-500">
-                      tls fingerprint: {profile.tlsFingerprint || 'not captured in this flow'}
-                    </p>
+                    <p className="mt-2 break-all text-sm text-slate-500">{profile.apiBaseUrl}</p>
                     <p className="mt-3 text-xs uppercase tracking-[0.16em] text-slate-400">
-                      scopes: {profile.scopes.join(', ')}
+                      {profile.scopes.join(' · ')}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -282,16 +347,16 @@ function HomePage(props: {
 
       <aside className="space-y-6">
         <InfoCard
-          title="how the shell works"
-          body="cloudflare pages only serves the app bundle. every api request and websocket connection goes directly to the saved home server over tailscale."
+          title="app model"
+          body="cloudflare only serves the shell. every message request and live event stream still goes straight to the selected home bridge over tailscale."
         />
         <InfoCard
-          title="what is persisted"
-          body="server profiles, encrypted tokens, cache placeholders, and the last active bridge are stored locally so refreshes do not wipe the shell."
+          title="why it feels app-like"
+          body="profiles, encrypted tokens, chat cache, and thread history stay on this device so refreshes can rehydrate instead of starting from scratch."
         />
         <InfoCard
-          title="browser reality"
-          body="this shell assumes the browser can directly reach the bridge over tailscale. no relay, no edge proxy, and no public message backend."
+          title="settings moved out"
+          body="bridge metadata, connection status, and pairing utilities belong in settings so the primary surfaces can stay focused on selecting a bridge and reading conversations."
         />
       </aside>
     </div>
@@ -374,7 +439,7 @@ function PairPage(props: {
     <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
       <section className="panel p-6 sm:p-8">
         <p className="pill">direct pairing</p>
-        <h2 className="mt-4 text-2xl font-semibold">scan or paste the bridge qr payload</h2>
+        <h2 className="mt-4 text-2xl font-semibold">pair this browser</h2>
         <p className="mt-3 text-sm text-slate-600">
           the qr comes from <code>imsg-bridge-cli pair</code>. the browser will pair
           directly with the bridge over tailscale.
@@ -555,7 +620,7 @@ function SessionPage(props: {
     <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
       <section className="panel p-6 sm:p-8">
         <p className="pill">delegated session</p>
-        <h2 className="mt-4 text-2xl font-semibold">link this browser through another paired device</h2>
+        <h2 className="mt-4 text-2xl font-semibold">approve this browser from another device</h2>
         <p className="mt-3 text-sm text-slate-600">
           use this when a phone or another client already has access and you want to
           approve a fresh browser session.
@@ -625,6 +690,58 @@ function SessionPage(props: {
         <InfoCard
           title="manual host entry"
           body="the session flow needs a bridge host up front because the browser still connects directly to the home server rather than through cloudflare."
+        />
+      </section>
+    </div>
+  );
+}
+
+function SettingsPage({ profile }: { profile: StoredServerProfile }) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
+      <section className="panel p-6 sm:p-8">
+        <p className="pill">settings</p>
+        <h2 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">
+          bridge settings and connection details
+        </h2>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          operational details live here so the main app can stay focused on chats.
+        </p>
+
+        <div className="mt-6 space-y-4">
+          <SettingsRow label="bridge" value={profile.name} />
+          <SettingsRow label="api host" value={profile.apiBaseUrl} multiline />
+          <SettingsRow label="websocket" value={`${profile.wsBaseUrl}/v1/events`} multiline />
+          <SettingsRow
+            label="tls fingerprint"
+            value={profile.tlsFingerprint || 'not captured in this auth flow'}
+            multiline
+          />
+          <SettingsRow label="scopes" value={profile.scopes.join(', ')} />
+          <SettingsRow label="token expiry" value={profile.expiresAt} />
+        </div>
+      </section>
+
+      <section className="space-y-6">
+        <div className="panel p-6 sm:p-8">
+          <p className="pill">access</p>
+          <h3 className="mt-4 text-xl font-semibold text-slate-900">add another session</h3>
+          <p className="mt-3 text-sm text-slate-600">
+            pairing and delegated approval are tucked in here instead of cluttering the main app.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link className="button-primary" to="/pair">
+              pair with qr
+            </Link>
+            <Link className="button-secondary" to="/session">
+              approval code
+            </Link>
+          </div>
+        </div>
+
+        <InfoCard
+          title="private by design"
+          body="the shell still talks directly to the selected bridge over tailscale. this page only reorganizes the noisy bits so the main views feel more like a modern app."
         />
       </section>
     </div>
@@ -990,129 +1107,73 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[0.72fr_1.28fr]">
-      <aside className="space-y-6">
-        <div className="panel p-6 sm:p-8">
-          <p className="pill">active bridge</p>
-          <h2 className="mt-4 text-2xl font-semibold">{profile.name}</h2>
-          <p className="mt-3 break-all text-sm text-slate-600">{profile.apiBaseUrl}</p>
-          <dl className="mt-6 space-y-3 text-sm text-slate-600">
-            <div>
-              <dt className="font-medium text-slate-900">websocket</dt>
-              <dd className="break-all">{profile.wsBaseUrl}/v1/events</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-slate-900">scopes</dt>
-              <dd>{profile.scopes.join(', ')}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-slate-900">expires at</dt>
-              <dd>{profile.expiresAt}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-slate-900">live events</dt>
-              <dd>{eventsStatus}{eventsError ? ` · ${eventsError}` : ''}</dd>
-            </div>
-            {serverInfo ? (
-              <>
-                <div>
-                  <dt className="font-medium text-slate-900">server</dt>
-                  <dd>
-                    {serverInfo.name} · app {serverInfo.version} · imsg {serverInfo.imsg_version}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-900">conversation count</dt>
-                  <dd>{chats.length}</dd>
-                </div>
-              </>
-            ) : null}
-          </dl>
-        </div>
-
-        <InfoCard
-          title="live read path"
-          body="this screen now uses the real read endpoints. it loads the saved bridge profile, fetches chats, restores the last active conversation, and pulls recent message history."
-        />
-      </aside>
-
-      <section className="panel p-6 sm:p-8">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="pill">read path</p>
-            <h2 className="mt-4 text-2xl font-semibold">chats are now live in the browser</h2>
-            <p className="mt-3 text-sm text-slate-600">
-              this shell now reads straight from the selected bridge. sending, attachments,
-              and live websocket updates can layer onto this without changing the auth model.
+    <section className="panel overflow-hidden p-4 sm:p-5">
+      <div className="rounded-[30px] bg-gradient-to-br from-white via-white to-slate-100 px-4 py-5 sm:px-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="pill">conversation view</p>
+            <h2 className="mt-4 truncate text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+              {profile.name}
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              cached threads stay interactive while the bridge refreshes in the background.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={eventsStatus} />
             <StatusBadge status={status} />
+            <Link className="button-secondary" to="/settings">
+              settings
+            </Link>
           </div>
         </div>
 
-        <div className="mt-8 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-          <ChatList
-            activeChatId={activeChatId}
-            chats={chats}
-            disabled={status === 'loading' && chats.length === 0}
-            status={status}
-            onSelectChat={(chatId) => {
-              if (chatId === activeChatId) {
-                return;
-              }
-              void loadMessagesForChat(chatId);
-            }}
-          />
-          <ThreadView
-            activeChat={activeChat}
-            canLoadOlder={canLoadOlder}
-            loadingOlder={loadingOlder}
-            messages={messages}
-            onLoadOlder={() => {
-              void loadOlderMessages();
-            }}
-            shellStatus={status}
-            onReload={() => {
-              if (activeChatId !== null) {
-                void loadMessagesForChat(activeChatId, token, false);
-              }
-            }}
-            status={threadStatus}
-            statusBadge={<StatusBadge status={threadStatus} />}
-            threadError={threadError}
-          />
-        </div>
+        {(status === 'loading' || status === 'refreshing' || status === 'error') ? (
+          <div className="mt-5 rounded-[24px] bg-white/80 px-4 py-3 text-sm text-slate-600">
+            {status === 'loading' ? 'bringing the bridge online for this screen…' : null}
+            {status === 'refreshing'
+              ? 'showing local state while the bridge refreshes in the background.'
+              : null}
+            {status === 'error'
+              ? `bridge refresh failed: ${error}. the shell will keep showing the last local state it has.`
+              : null}
+          </div>
+        ) : null}
+      </div>
 
-        <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-          {status === 'ready' && serverInfo ? (
-            <div className="space-y-2">
-              <p className="font-medium text-slate-900">bridge connection looks healthy</p>
-              <p>
-                server: {serverInfo.name} · app version: {serverInfo.version} · imsg:{' '}
-                {serverInfo.imsg_version}
-              </p>
-            </div>
-          ) : null}
-
-          {status === 'loading' ? <p>checking the saved bridge token and server reachability…</p> : null}
-          {status === 'refreshing' ? (
-            <p>
-              showing cached state while the bridge refreshes in the background. you can keep
-              browsing the last local data.
-            </p>
-          ) : null}
-          {status === 'error' ? (
-            <p className="text-rose-700">
-              direct bridge check failed: {error}. this usually means the browser cannot
-              currently reach the home server over tailscale or the saved token is no longer valid.
-            </p>
-          ) : null}
-          {status === 'idle' ? <p>waiting to start the direct bridge check…</p> : null}
-        </div>
-      </section>
-    </div>
+      <div className="mt-4 grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <ChatList
+          activeChatId={activeChatId}
+          chats={chats}
+          disabled={status === 'loading' && chats.length === 0}
+          status={status}
+          onSelectChat={(chatId) => {
+            if (chatId === activeChatId) {
+              return;
+            }
+            void loadMessagesForChat(chatId);
+          }}
+        />
+        <ThreadView
+          activeChat={activeChat}
+          canLoadOlder={canLoadOlder}
+          loadingOlder={loadingOlder}
+          messages={messages}
+          onLoadOlder={() => {
+            void loadOlderMessages();
+          }}
+          shellStatus={status}
+          onReload={() => {
+            if (activeChatId !== null) {
+              void loadMessagesForChat(activeChatId, token, false);
+            }
+          }}
+          status={threadStatus}
+          statusBadge={<StatusBadge status={threadStatus} />}
+          threadError={threadError}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -1397,9 +1458,26 @@ function StatusBadge({
 
 function InfoCard(props: { title: string; body: string }) {
   return (
-    <div className="panel p-6">
+    <div className="panel rounded-[28px] p-6">
       <h3 className="text-lg font-semibold">{props.title}</h3>
       <p className="mt-3 text-sm leading-6 text-slate-600">{props.body}</p>
+    </div>
+  );
+}
+
+function SettingsRow(props: { label: string; value: string; multiline?: boolean }) {
+  return (
+    <div className="rounded-[24px] bg-white/82 px-4 py-4">
+      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{props.label}</p>
+      <p
+        className={
+          props.multiline
+            ? 'mt-2 break-all text-sm leading-6 text-slate-700'
+            : 'mt-2 text-sm text-slate-700'
+        }
+      >
+        {props.value}
+      </p>
     </div>
   );
 }

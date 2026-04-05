@@ -1,20 +1,38 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --surface-0: #f7f3ee;
+    --surface-1: rgba(255, 251, 247, 0.88);
+    --surface-2: rgba(255, 255, 255, 0.92);
+    --surface-3: rgba(245, 239, 232, 0.92);
+    --outline-soft: rgba(148, 163, 184, 0.18);
+    --signal-strong: #0f766e;
+    --signal-soft: rgba(15, 118, 110, 0.1);
+    --shadow-soft: 0 18px 40px rgba(107, 114, 128, 0.12);
+  }
+
   html {
     color-scheme: light;
   }
 
+  body,
+  #root {
+    min-height: 100vh;
+  }
+
   body {
-    @apply min-h-screen bg-mist text-ink antialiased;
+    @apply text-ink antialiased;
+    font-family: 'Manrope', sans-serif;
     background-image:
-      radial-gradient(circle at top left, rgba(16, 185, 129, 0.12), transparent 32%),
-      radial-gradient(circle at bottom right, rgba(249, 115, 22, 0.12), transparent 28%),
-      linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,1));
+      radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 28%),
+      radial-gradient(circle at top right, rgba(59, 130, 246, 0.1), transparent 24%),
+      radial-gradient(circle at bottom center, rgba(245, 158, 11, 0.1), transparent 24%),
+      linear-gradient(180deg, #f8f5f1, #eef2f6 64%, #eef4f5);
   }
 
   input,
@@ -27,22 +45,59 @@
 
 @layer components {
   .panel {
-    @apply rounded-3xl border border-white/70 bg-white/85 shadow-panel backdrop-blur;
+    @apply border shadow-panel;
+    border-color: var(--outline-soft);
+    background: var(--surface-1);
+    backdrop-filter: blur(20px);
+    box-shadow: var(--shadow-soft);
   }
 
   .field {
-    @apply w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-signal focus:ring-2 focus:ring-signal/20;
+    @apply w-full rounded-[20px] border px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400;
+    border-color: rgba(148, 163, 184, 0.2);
+    background: var(--surface-2);
+    transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+  }
+
+  .field:focus {
+    border-color: rgba(15, 118, 110, 0.45);
+    box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
   }
 
   .button-primary {
-    @apply inline-flex items-center justify-center rounded-2xl bg-signal px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300;
+    @apply inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold text-white;
+    background: linear-gradient(180deg, #199181, #0f766e);
+    box-shadow: 0 10px 22px rgba(15, 118, 110, 0.22);
+    transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+  }
+
+  .button-primary:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.02);
+  }
+
+  .button-primary:disabled {
+    @apply cursor-not-allowed;
+    filter: saturate(0.2);
+    box-shadow: none;
   }
 
   .button-secondary {
-    @apply inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50;
+    @apply inline-flex items-center justify-center rounded-full border px-5 py-3 text-sm font-semibold text-slate-700;
+    border-color: rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.82);
+    transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+  }
+
+  .button-secondary:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(148, 163, 184, 0.32);
   }
 
   .pill {
-    @apply inline-flex items-center rounded-full bg-glow px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-signal;
+    @apply inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em];
+    background: rgba(15, 118, 110, 0.1);
+    color: var(--signal-strong);
   }
 }
