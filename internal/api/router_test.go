@@ -137,6 +137,62 @@ func TestHandleMessagesCanSkipAttachments(t *testing.T) {
 	}
 }
 
+func TestHandleMessagesUsesHistoryCache(t *testing.T) {
+	runner := &stubRunner{
+		messages: []imsg.Message{{ID: 1, ChatID: 7, Text: "hello"}},
+	}
+	server := NewServer(Config{}, runner, events.NewHub(), nil, nil, nil)
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/v1/chats/7/messages?limit=1&attachments=0", nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+	}
+
+	if runner.listMessagesCalls != 1 {
+		t.Fatalf("expected one runner call after cache hit, got %d", runner.listMessagesCalls)
+	}
+}
+
+func TestHandleMessagesInvalidatesHistoryCacheOnEvent(t *testing.T) {
+	hub := events.NewHub()
+	runner := &stubRunner{
+		messages: []imsg.Message{{ID: 1, ChatID: 7, Text: "hello"}},
+	}
+	server := NewServer(Config{}, runner, hub, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/chats/7/messages?limit=1&attachments=0", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	hub.Publish(events.Event{
+		Type: "new_message",
+		Data: imsg.Message{ID: 2, ChatID: 7, Text: "new"},
+	})
+
+	time.Sleep(10 * time.Millisecond)
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/chats/7/messages?limit=1&attachments=0", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 after invalidation, got %d", rec.Code)
+	}
+
+	if runner.listMessagesCalls != 2 {
+		t.Fatalf("expected cache invalidation to trigger a second runner call, got %d", runner.listMessagesCalls)
+	}
+}
+
 func TestSessionEndpoints(t *testing.T) {
 	dataDir := t.TempDir()
 	identity, err := auth.EnsureIdentity(dataDir)
@@ -483,6 +539,7 @@ type stubRunner struct {
 	version              string
 	chats                []imsg.Chat
 	messages             []imsg.Message
+	listMessagesCalls    int
 	lastListMessagesOpts imsg.ListMessagesOptions
 	sendResult           imsg.SendMessageResult
 	sendAttachmentResult imsg.SendAttachmentResult
@@ -499,6 +556,7 @@ func (s *stubRunner) ListChats(context.Context, int) ([]imsg.Chat, error) {
 }
 
 func (s *stubRunner) ListMessages(_ context.Context, _ int64, opts imsg.ListMessagesOptions) ([]imsg.Message, error) {
+	s.listMessagesCalls++
 	s.lastListMessagesOpts = opts
 	return s.messages, nil
 }

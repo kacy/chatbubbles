@@ -38,6 +38,7 @@ type Server struct {
 	auth        Authenticator
 	pairing     *auth.Service
 	hub         *events.Hub
+	history     *messageHistoryCache
 	limiter     *rateLimiter
 	runner      Runner
 	webhooks    WebhookService
@@ -49,6 +50,7 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service
 		cfg:         cfg,
 		pairing:     pairing,
 		hub:         hub,
+		history:     newMessageHistoryCache(30 * time.Minute),
 		limiter:     newRateLimiter(),
 		runner:      runner,
 		webhooks:    webhooks,
@@ -56,6 +58,9 @@ func NewServer(cfg Config, runner Runner, hub *events.Hub, pairing *auth.Service
 	}
 	if pairing != nil {
 		s.auth = pairing
+	}
+	if hub != nil {
+		s.watchHistoryInvalidation()
 	}
 
 	if s.cfg.TailscaleIP == "" {
@@ -179,6 +184,12 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.history != nil {
+		if cached, ok := s.history.Get(chatID, opts); ok {
+			writeJSON(w, http.StatusOK, map[string][]imsg.Message{"messages": cached})
+			return
+		}
+	}
 	messages, err := s.runner.ListMessages(r.Context(), chatID, opts)
 	if err != nil {
 		writeError(w, statusForErr(err), "internal", err.Error())
@@ -186,6 +197,9 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.attachments != nil && opts.Attachments {
 		s.attachments.DecorateMessages(messages)
+	}
+	if s.history != nil {
+		s.history.Put(chatID, opts, messages)
 	}
 
 	writeJSON(w, http.StatusOK, map[string][]imsg.Message{"messages": messages})
@@ -222,6 +236,24 @@ func statusForErr(err error) int {
 	}
 
 	return http.StatusInternalServerError
+}
+
+func (s *Server) watchHistoryInvalidation() {
+	eventsCh, _ := s.hub.Subscribe(32)
+
+	go func() {
+		for event := range eventsCh {
+			message, ok := event.Data.(imsg.Message)
+			if !ok {
+				continue
+			}
+			if message.ChatID == 0 || s.history == nil {
+				continue
+			}
+
+			s.history.InvalidateChat(message.ChatID)
+		}
+	}()
 }
 
 func detectTailscaleIP() string {
