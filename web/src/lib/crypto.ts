@@ -1,6 +1,6 @@
 import type { EncryptedValue } from './types';
 
-const keyStorageKey = 'imsg-bridge.web.crypto-key';
+const keyStorageKey = 'chatbubbles.web.crypto-key';
 
 export async function encryptString(plainText: string): Promise<EncryptedValue> {
   const key = await getOrCreateKey();

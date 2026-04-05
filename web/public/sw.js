@@ -1,4 +1,4 @@
-const cacheName = 'imsg-bridge-web-shell-v2';
+const cacheName = 'chatbubbles-web-shell-v1';
 const shellAssets = ['/', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {

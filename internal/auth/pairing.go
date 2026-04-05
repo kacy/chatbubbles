@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kacy/imsg-bridge/internal/store"
+	"github.com/kacy/chatbubbles/internal/store"
 )
 
 var ErrUnauthorized = errors.New("unauthorized")

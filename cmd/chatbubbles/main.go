@@ -14,16 +14,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kacy/imsg-bridge/internal/api"
-	"github.com/kacy/imsg-bridge/internal/attachment"
-	"github.com/kacy/imsg-bridge/internal/auth"
-	"github.com/kacy/imsg-bridge/internal/buildinfo"
-	"github.com/kacy/imsg-bridge/internal/ctlsock"
-	"github.com/kacy/imsg-bridge/internal/events"
-	"github.com/kacy/imsg-bridge/internal/imsg"
-	"github.com/kacy/imsg-bridge/internal/store"
-	bridgetls "github.com/kacy/imsg-bridge/internal/tls"
-	"github.com/kacy/imsg-bridge/internal/webhook"
+	"github.com/kacy/chatbubbles/internal/api"
+	"github.com/kacy/chatbubbles/internal/attachment"
+	"github.com/kacy/chatbubbles/internal/auth"
+	"github.com/kacy/chatbubbles/internal/buildinfo"
+	"github.com/kacy/chatbubbles/internal/ctlsock"
+	"github.com/kacy/chatbubbles/internal/events"
+	"github.com/kacy/chatbubbles/internal/imsg"
+	"github.com/kacy/chatbubbles/internal/store"
+	bridgetls "github.com/kacy/chatbubbles/internal/tls"
+	"github.com/kacy/chatbubbles/internal/webhook"
 )
 
 func main() {
@@ -47,7 +47,7 @@ func main() {
 	}
 	pairHost := pairHost(cfg.ListenAddr, cfg.TailscaleIP)
 	if socketPath == "" {
-		socketPath = filepath.Join(dataDir, "imsg-bridge.sock")
+		socketPath = filepath.Join(dataDir, "chatbubbles.sock")
 	}
 
 	material, err := bridgetls.EnsureMaterial(dataDir, cfg.ServerName, []string{cfg.TailscaleIP, hostname()})
@@ -171,7 +171,7 @@ func main() {
 func hostname() string {
 	name, err := os.Hostname()
 	if err != nil || name == "" {
-		return "imsg-bridge"
+		return "chatbubbles"
 	}
 
 	return name
@@ -180,10 +180,10 @@ func hostname() string {
 func defaultDataDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "imsg-bridge-data"
+		return "chatbubbles-data"
 	}
 
-	return filepath.Join(home, ".local", "share", "imsg-bridge")
+	return filepath.Join(home, ".local", "share", "chatbubbles")
 }
 
 func detectTailscaleIP() string {

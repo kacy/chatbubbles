@@ -1,6 +1,6 @@
 import type { Chat, Message, ProfileDraft, StoredServerProfile } from './types';
 
-const databaseName = 'imsg-bridge-web';
+const databaseName = 'chatbubbles-web';
 const databaseVersion = 1;
 const profilesStore = 'profiles';
 const appStateStore = 'app_state';

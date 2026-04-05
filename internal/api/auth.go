@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 
-	"github.com/kacy/imsg-bridge/internal/auth"
+	"github.com/kacy/chatbubbles/internal/auth"
 )
 
 type Authenticator interface {

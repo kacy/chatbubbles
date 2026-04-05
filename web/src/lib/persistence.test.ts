@@ -17,7 +17,7 @@ import {
 describe('persistence', () => {
   beforeEach(() => {
     window.localStorage.clear();
-    indexedDB.deleteDatabase('imsg-bridge-web');
+    indexedDB.deleteDatabase('chatbubbles-web');
   });
 
   test('encrypts and decrypts token values', async () => {

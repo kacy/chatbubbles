@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kacy/imsg-bridge/internal/store"
+	"github.com/kacy/chatbubbles/internal/store"
 )
 
 type Service struct {

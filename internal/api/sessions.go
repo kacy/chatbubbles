@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kacy/imsg-bridge/internal/auth"
+	"github.com/kacy/chatbubbles/internal/auth"
 )
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {

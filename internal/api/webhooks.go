@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/kacy/imsg-bridge/internal/store"
+	"github.com/kacy/chatbubbles/internal/store"
 )
 
 type WebhookService interface {

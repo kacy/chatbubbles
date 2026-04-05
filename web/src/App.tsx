@@ -201,7 +201,7 @@ function HomePage(props: {
   return (
     <div className="flex min-h-dvh flex-col">
       <div className="toolbar">
-        <h1 className="text-sm font-semibold text-slate-900">imsg-bridge</h1>
+        <h1 className="text-sm font-semibold text-slate-900">chatbubbles</h1>
       </div>
 
       <div className="mx-auto w-full max-w-lg flex-1 px-4 py-6">
@@ -212,7 +212,7 @@ function HomePage(props: {
             </div>
             <h2 className="mt-4 text-lg font-semibold text-slate-900">connect a bridge</h2>
             <p className="mt-2 text-sm text-slate-500">
-              pair this browser with your home imsg-bridge server.
+              pair this browser with your home chatbubbles server.
             </p>
             <div className="mt-6 flex justify-center gap-3">
               <Link className="button-primary" to="/pair">pair with qr</Link>
@@ -376,7 +376,7 @@ function PairPage(props: {
 
       <div className="mx-auto w-full max-w-lg flex-1 px-4 py-6">
         <p className="text-sm text-slate-500">
-          scan or paste the qr payload from <code className="text-xs">imsg-bridge-cli pair</code>.
+          scan or paste the qr payload from <code className="text-xs">chatbubbles-cli pair</code>.
         </p>
 
         {scannerOpen ? (

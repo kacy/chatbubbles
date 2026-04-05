@@ -1,18 +1,18 @@
-# imsg-bridge
+# chatbubbles
 
-`imsg-bridge` is a small https api for iMessage over tailscale.
+`chatbubbles` is a small https api for iMessage over tailscale.
 
 it runs on a Mac, talks to [`imsg`](https://github.com/steipete/imsg), and gives paired clients a clean way to read chats, stream events, send messages, and manage webhooks without exposing the machine to the public internet.
 
 ## what it does
 
-today, `imsg-bridge` supports:
+today, `chatbubbles` supports:
 
 - tls on first boot with a pinned self-signed fingerprint
 - token-based auth with direct pairing and delegated web sessions
 - read endpoints for server info, chats, and message history
 - a websocket event stream backed by `imsg watch`
-- local admin over a unix socket with `imsg-bridge-cli`
+- local admin over a unix socket with `chatbubbles-cli`
 - webhook registration and delivery
 - api-based message and attachment sending
 
@@ -28,7 +28,7 @@ still landing:
 - [`imsg`](https://github.com/steipete/imsg): `brew install imsg`
 - [tailscale](https://tailscale.com/) installed and connected
 
-for local bridge work, the daemon also accepts `IMSGBRIDGE_IMSG_BIN=/path/to/imsg` or `-imsg-bin /path/to/imsg` if you need to point at a patched checkout before upstream catches up.
+for local bridge work, the daemon accepts `CHATBUBBLES_IMSG_BIN=/path/to/imsg` or `-imsg-bin /path/to/imsg` if you need to point at a patched checkout before upstream catches up.
 
 ## quick start
 
@@ -48,7 +48,7 @@ on first boot it will:
 - log the tls fingerprint used for pairing
 - create a short-lived bootstrap pairing code if no clients exist yet
 
-after that, local admin happens over the unix socket at `~/.local/share/imsg-bridge/imsg-bridge.sock`.
+after that, local admin happens over the unix socket at `~/.local/share/chatbubbles/chatbubbles.sock`.
 
 ## how to use it
 
@@ -64,7 +64,7 @@ direct clients can talk to the bridge itself on `:8443`.
 the normal path is:
 
 ```sh
-imsg-bridge-cli pair
+chatbubbles-cli pair
 ```
 
 that command mints a pairing code, prints the server fingerprint, and renders a terminal qr that direct clients can scan.
@@ -72,22 +72,22 @@ that command mints a pairing code, prints the server fingerprint, and renders a 
 common local commands:
 
 ```sh
-imsg-bridge-cli status
-imsg-bridge-cli pair
-imsg-bridge-cli clients
-imsg-bridge-cli revoke c_01example
+chatbubbles-cli status
+chatbubbles-cli pair
+chatbubbles-cli clients
+chatbubbles-cli revoke c_01example
 ```
 
 for local bridge work, you can also point the daemon at a patched `imsg` checkout:
 
 ```sh
-IMSGBRIDGE_IMSG_BIN=/path/to/imsg make run
+CHATBUBBLES_IMSG_BIN=/path/to/imsg make run
 ```
 
 or:
 
 ```sh
-./bin/imsg-bridge -imsg-bin /path/to/imsg
+./bin/chatbubbles -imsg-bin /path/to/imsg
 ```
 
 ### browser clients
@@ -111,7 +111,7 @@ make run
 or your built binary:
 
 ```sh
-./bin/imsg-bridge
+./bin/chatbubbles
 ```
 
 #### 2. put tailscale serve in front of it
@@ -185,7 +185,7 @@ the browser polls the returned `session_id`, and an already-paired client approv
 
 the short version:
 
-- use `imsg-bridge-cli pair` for direct/native clients
+- use `chatbubbles-cli pair` for direct/native clients
 - use the cloudflare-hosted web shell plus your `*.ts.net` host for browser clients
 - do not use `:8443` as the browser host
 
@@ -215,7 +215,7 @@ example send request:
 curl -sk https://127.0.0.1:8443/v1/messages \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"to":"+15551234567","text":"hi from imsg-bridge","service":"auto"}'
+  -d '{"to":"+15551234567","text":"hi from chatbubbles","service":"auto"}'
 ```
 
 example webhook list request:
@@ -261,7 +261,7 @@ the browser is almost always talking to the bridge's direct self-signed tls list
 
 ## project notes
 
-- the daemon keeps its state in `~/.local/share/imsg-bridge/`
+- the daemon keeps its state in `~/.local/share/chatbubbles/`
 - the api is meant for tailscale clients, not direct public exposure
 - websocket auth uses `?token=` because browser websocket clients cannot set custom auth headers
 - for now, the browser story assumes tailscale serve and a `*.ts.net` hostname. direct self-signed tls is for native/direct clients.

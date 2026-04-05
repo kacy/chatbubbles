@@ -29,7 +29,7 @@ func ResolveBinary(binary string) string {
 		return binary
 	}
 
-	if binary := strings.TrimSpace(os.Getenv("IMSGBRIDGE_IMSG_BIN")); binary != "" {
+	if binary := strings.TrimSpace(os.Getenv("CHATBUBBLES_IMSG_BIN")); binary != "" {
 		return binary
 	}
 

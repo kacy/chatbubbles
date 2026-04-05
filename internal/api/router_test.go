@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kacy/imsg-bridge/internal/attachment"
-	"github.com/kacy/imsg-bridge/internal/auth"
-	"github.com/kacy/imsg-bridge/internal/events"
-	"github.com/kacy/imsg-bridge/internal/imsg"
-	"github.com/kacy/imsg-bridge/internal/store"
+	"github.com/kacy/chatbubbles/internal/attachment"
+	"github.com/kacy/chatbubbles/internal/auth"
+	"github.com/kacy/chatbubbles/internal/events"
+	"github.com/kacy/chatbubbles/internal/imsg"
+	"github.com/kacy/chatbubbles/internal/store"
 )
 
 func TestHandleServer(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kacy/imsg-bridge/internal/imsg"
+	"github.com/kacy/chatbubbles/internal/imsg"
 )
 
 func TestServiceEncodeAndOpen(t *testing.T) {

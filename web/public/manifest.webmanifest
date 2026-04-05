@@ -1,11 +1,11 @@
 {
-  "name": "imsg-bridge web",
-  "short_name": "imsg-bridge",
+  "name": "chatbubbles web",
+  "short_name": "chatbubbles",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f8fafc",
   "theme_color": "#0A84FF",
-  "description": "direct browser shell for imsg-bridge over tailscale",
+  "description": "direct browser shell for chatbubbles over tailscale",
   "icons": [
     {
       "src": "/icon.svg",

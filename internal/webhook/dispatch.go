@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kacy/imsg-bridge/internal/events"
-	"github.com/kacy/imsg-bridge/internal/store"
+	"github.com/kacy/chatbubbles/internal/events"
+	"github.com/kacy/chatbubbles/internal/store"
 )
 
 type Store interface {

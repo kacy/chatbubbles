@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kacy/imsg-bridge/internal/imsg"
+	"github.com/kacy/chatbubbles/internal/imsg"
 )
 
 type messageHistoryCache struct {
@@ -15,9 +15,9 @@ type messageHistoryCache struct {
 }
 
 type cachedMessages struct {
-	chatID     int64
-	expiresAt  time.Time
-	messages   []imsg.Message
+	chatID    int64
+	expiresAt time.Time
+	messages  []imsg.Message
 }
 
 func newMessageHistoryCache(ttl time.Duration) *messageHistoryCache {

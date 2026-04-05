@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kacy/imsg-bridge/internal/store"
+	"github.com/kacy/chatbubbles/internal/store"
 )
 
 func TestTokenRoundTrip(t *testing.T) {

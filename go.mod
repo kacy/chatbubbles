@@ -1,4 +1,4 @@
-module github.com/kacy/imsg-bridge
+module github.com/kacy/chatbubbles
 
 go 1.25.0
 

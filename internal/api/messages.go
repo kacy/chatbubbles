@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/kacy/imsg-bridge/internal/imsg"
+	"github.com/kacy/chatbubbles/internal/imsg"
 )
 
 func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {

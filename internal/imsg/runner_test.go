@@ -7,7 +7,7 @@ import (
 )
 
 func TestResolveBinaryPrefersExplicitPath(t *testing.T) {
-	t.Setenv("IMSGBRIDGE_IMSG_BIN", "/tmp/from-env")
+	t.Setenv("CHATBUBBLES_IMSG_BIN", "/tmp/from-env")
 
 	if got := ResolveBinary("/tmp/from-flag"); got != "/tmp/from-flag" {
 		t.Fatalf("expected explicit path, got %q", got)
@@ -15,7 +15,7 @@ func TestResolveBinaryPrefersExplicitPath(t *testing.T) {
 }
 
 func TestResolveBinaryPrefersEnvVar(t *testing.T) {
-	t.Setenv("IMSGBRIDGE_IMSG_BIN", "/tmp/from-env")
+	t.Setenv("CHATBUBBLES_IMSG_BIN", "/tmp/from-env")
 
 	if got := ResolveBinary(""); got != "/tmp/from-env" {
 		t.Fatalf("expected env path, got %q", got)
@@ -24,7 +24,7 @@ func TestResolveBinaryPrefersEnvVar(t *testing.T) {
 
 func TestResolveBinaryFindsSiblingCheckoutFromWorkingDir(t *testing.T) {
 	root := t.TempDir()
-	bridgeDir := filepath.Join(root, "imsg-bridge")
+	bridgeDir := filepath.Join(root, "chatbubbles")
 	imsgDir := filepath.Join(root, "imsg", "bin")
 
 	if err := os.MkdirAll(bridgeDir, 0o755); err != nil {
@@ -53,7 +53,7 @@ func TestResolveBinaryFindsSiblingCheckoutFromWorkingDir(t *testing.T) {
 		t.Fatalf("chdir: %v", err)
 	}
 
-	t.Setenv("IMSGBRIDGE_IMSG_BIN", "")
+	t.Setenv("CHATBUBBLES_IMSG_BIN", "")
 
 	got := ResolveBinary("")
 	resolvedGot, err := filepath.EvalSymlinks(got)
@@ -71,7 +71,7 @@ func TestResolveBinaryFindsSiblingCheckoutFromWorkingDir(t *testing.T) {
 }
 
 func TestResolveBinaryFallsBackToPathLookup(t *testing.T) {
-	t.Setenv("IMSGBRIDGE_IMSG_BIN", "")
+	t.Setenv("CHATBUBBLES_IMSG_BIN", "")
 
 	if got := ResolveBinary(""); got != "imsg" {
 		t.Fatalf("expected default binary name, got %q", got)

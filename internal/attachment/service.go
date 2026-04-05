@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kacy/imsg-bridge/internal/imsg"
+	"github.com/kacy/chatbubbles/internal/imsg"
 )
 
 var ErrInvalidID = errors.New("attachment id is invalid")

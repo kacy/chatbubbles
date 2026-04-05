@@ -12,18 +12,20 @@ repo_root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 
 dist_dir="$repo_root/dist"
+app_name="chatbubbles"
+cli_name="chatbubbles-cli"
 
 rm -rf "$dist_dir"
 mkdir -p "$dist_dir"
 
-ldflags="-X github.com/kacy/imsg-bridge/internal/buildinfo.Version=$version"
+ldflags="-X github.com/kacy/chatbubbles/internal/buildinfo.Version=$version"
 
 for arch in amd64 arm64; do
-	stage_dir="$dist_dir/imsg-bridge_${version}_darwin_${arch}"
+	stage_dir="$dist_dir/${app_name}_${version}_darwin_${arch}"
 	mkdir -p "$stage_dir"
 
-	CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build -ldflags "$ldflags" -o "$stage_dir/imsg-bridge" ./cmd/imsg-bridge
-	CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build -o "$stage_dir/imsg-bridge-cli" ./cmd/imsg-bridge-cli
+	CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build -ldflags "$ldflags" -o "$stage_dir/$app_name" ./cmd/chatbubbles
+	CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build -o "$stage_dir/$cli_name" ./cmd/chatbubbles-cli
 	cp "$repo_root/README.md" "$stage_dir/README.md"
 
 	(

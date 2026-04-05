@@ -22,7 +22,7 @@ func main() {
 func run() error {
 	socketPath := defaultSocketPath()
 
-	fs := flag.NewFlagSet("imsg-bridge-cli", flag.ContinueOnError)
+	fs := flag.NewFlagSet("chatbubbles-cli", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.StringVar(&socketPath, "socket", socketPath, "control socket path")
 
@@ -32,7 +32,7 @@ func run() error {
 
 	args := fs.Args()
 	if len(args) == 0 {
-		return fmt.Errorf("usage: imsg-bridge-cli [--socket path] <pair|status|clients|revoke>")
+		return fmt.Errorf("usage: chatbubbles-cli [--socket path] <pair|status|clients|revoke>")
 	}
 
 	switch args[0] {
@@ -196,7 +196,7 @@ func runClients(socketPath string) error {
 
 func runRevoke(socketPath string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: imsg-bridge-cli revoke <client-id>")
+		return fmt.Errorf("usage: chatbubbles-cli revoke <client-id>")
 	}
 
 	resp, err := request(socketPath, map[string]any{
@@ -247,8 +247,8 @@ func request(socketPath string, req any) ([]byte, error) {
 func defaultSocketPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "imsg-bridge.sock"
+		return "chatbubbles.sock"
 	}
 
-	return filepath.Join(home, ".local", "share", "imsg-bridge", "imsg-bridge.sock")
+	return filepath.Join(home, ".local", "share", "chatbubbles", "chatbubbles.sock")
 }
