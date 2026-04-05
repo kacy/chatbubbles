@@ -1,4 +1,4 @@
-const cacheName = 'imsg-bridge-web-shell-v1';
+const cacheName = 'imsg-bridge-web-shell-v2';
 const shellAssets = ['/', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -33,21 +33,44 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) {
-        return cached;
-      }
+  const isShellRequest =
+    event.request.mode === 'navigate' || shellAssets.includes(requestUrl.pathname);
 
-      return fetch(event.request).then((response) => {
-        if (!response.ok || response.type === 'opaque') {
-          return response;
-        }
+  if (isShellRequest) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
 
-        const clone = response.clone();
-        caches.open(cacheName).then((cache) => cache.put(event.request, clone));
-        return response;
-      });
-    }),
-  );
+  event.respondWith(cacheFirst(event.request));
 });
+
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok && response.type !== 'opaque') {
+      const cache = await caches.open(cacheName);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch (error) {
+    const cached = await caches.match(request);
+    if (cached) {
+      return cached;
+    }
+    throw error;
+  }
+}
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) {
+    return cached;
+  }
+
+  const response = await fetch(request);
+  if (response.ok && response.type !== 'opaque') {
+    const cache = await caches.open(cacheName);
+    await cache.put(request, response.clone());
+  }
+  return response;
+}
