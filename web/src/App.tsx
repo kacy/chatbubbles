@@ -45,6 +45,9 @@ type AppState = {
   loading: boolean;
 };
 
+const recentMessageLimit = 40;
+const olderMessagePageSize = 60;
+
 function defaultClientName() {
   return `browser on ${navigator.platform || 'this device'}`;
 }
@@ -640,6 +643,8 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
   );
   const [error, setError] = useState<string | null>(null);
   const [threadError, setThreadError] = useState<string | null>(null);
+  const [canLoadOlder, setCanLoadOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   const activeChat = useMemo(
     () => chats.find((chat) => chat.id === activeChatId) ?? null,
@@ -692,6 +697,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
           if (sortedChats.length === 0) {
             setActiveChatId(null);
             setMessages([]);
+            setCanLoadOlder(false);
             setThreadStatus('ready');
             return;
           }
@@ -750,19 +756,25 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
 
     if (cachedMessages.length > 0) {
       setMessages(sortMessages(cachedMessages));
+      setCanLoadOlder(cachedMessages.length >= recentMessageLimit);
     } else {
       setMessages([]);
+      setCanLoadOlder(false);
     }
     setThreadStatus('loading');
+    setLoadingOlder(false);
 
     try {
-      const loadedMessages = await listMessages(profile.apiBaseUrl, activeToken, chatId);
+      const loadedMessages = await listMessages(profile.apiBaseUrl, activeToken, chatId, {
+        limit: recentMessageLimit,
+      });
       if (requestId !== activeThreadRequest.current) {
         return;
       }
 
       const sortedMessages = sortMessages(loadedMessages);
       setMessages(sortedMessages);
+      setCanLoadOlder(loadedMessages.length >= recentMessageLimit);
       setThreadStatus('ready');
       void saveMessages(profile.id, chatId, sortedMessages).catch((cacheError) => {
         console.error('failed to cache messages', cacheError);
@@ -786,6 +798,42 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
       setThreadError(
         loadError instanceof Error ? loadError.message : 'could not load this conversation',
       );
+    }
+  }
+
+  async function loadOlderMessages() {
+    if (!activeChatId || !token || loadingOlder || messages.length === 0) {
+      return;
+    }
+
+    const oldestTimestamp = messages.find((message) => message.created_at)?.created_at;
+    if (!oldestTimestamp) {
+      setCanLoadOlder(false);
+      return;
+    }
+
+    setLoadingOlder(true);
+    setThreadError(null);
+
+    try {
+      const olderMessages = await listMessages(profile.apiBaseUrl, token, activeChatId, {
+        limit: olderMessagePageSize,
+        before: oldestTimestamp,
+      });
+      const mergedMessages = mergeMessages(messages, olderMessages);
+      setMessages(mergedMessages);
+      setCanLoadOlder(olderMessages.length >= olderMessagePageSize);
+      void saveMessages(profile.id, activeChatId, mergedMessages).catch((cacheError) => {
+        console.error('failed to cache merged messages', cacheError);
+      });
+    } catch (loadError) {
+      setThreadError(
+        loadError instanceof Error
+          ? `could not load older messages: ${loadError.message}`
+          : 'could not load older messages',
+      );
+    } finally {
+      setLoadingOlder(false);
     }
   }
 
@@ -859,7 +907,12 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
           />
           <ThreadView
             activeChat={activeChat}
+            canLoadOlder={canLoadOlder}
+            loadingOlder={loadingOlder}
             messages={messages}
+            onLoadOlder={() => {
+              void loadOlderMessages();
+            }}
             onReload={() => {
               if (activeChatId !== null) {
                 void loadMessagesForChat(activeChatId, token, false);
@@ -955,7 +1008,10 @@ function ChatList(props: {
 
 function ThreadView(props: {
   activeChat: Chat | null;
+  canLoadOlder: boolean;
+  loadingOlder: boolean;
   messages: Message[];
+  onLoadOlder: () => void;
   status: 'idle' | 'loading' | 'ready' | 'error';
   statusBadge: ReactNode;
   threadError: string | null;
@@ -988,6 +1044,19 @@ function ThreadView(props: {
       </div>
 
       <div className="mt-4 min-h-[28rem] space-y-3 rounded-3xl bg-slate-50 p-4">
+        {props.activeChat && props.canLoadOlder ? (
+          <div className="flex justify-center">
+            <button
+              className="button-secondary !px-3 !py-2 text-xs"
+              disabled={props.loadingOlder}
+              onClick={props.onLoadOlder}
+              type="button"
+            >
+              {props.loadingOlder ? 'loading older…' : 'load older messages'}
+            </button>
+          </div>
+        ) : null}
+
         {props.status === 'idle' ? (
           <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500">
             waiting for a conversation to load.
@@ -1191,6 +1260,20 @@ function formatBytes(value: number): string {
   }
 
   return `${(value / (1024 * 1024)).toFixed(1)} mb`;
+}
+
+function mergeMessages(current: Message[], older: Message[]): Message[] {
+  const byKey = new Map<string, Message>();
+
+  for (const message of [...current, ...older]) {
+    byKey.set(messageKey(message), message);
+  }
+
+  return sortMessages(Array.from(byKey.values()));
+}
+
+function messageKey(message: Message): string {
+  return message.guid?.trim() || String(message.id);
 }
 
 function QrScannerPanel({ onPayload }: { onPayload: (value: string) => void }) {

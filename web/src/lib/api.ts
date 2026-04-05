@@ -18,6 +18,11 @@ type SessionRequest = {
   clientType: 'web';
 };
 
+type ListMessagesOptions = {
+  limit?: number;
+  before?: string;
+};
+
 export async function pairClient(
   apiBaseUrl: string,
   request: PairRequest,
@@ -86,9 +91,14 @@ export async function listMessages(
   apiBaseUrl: string,
   token: string,
   chatId: number,
-  limit = 100,
+  options: ListMessagesOptions = {},
 ): Promise<Message[]> {
-  const query = new URLSearchParams({ limit: String(limit) });
+  const query = new URLSearchParams({
+    limit: String(options.limit ?? 100),
+  });
+  if (options.before) {
+    query.set('before', options.before);
+  }
   const response = await jsonRequest<{ messages: Message[] }>(
     `${apiBaseUrl}/v1/chats/${chatId}/messages?${query}`,
     {
