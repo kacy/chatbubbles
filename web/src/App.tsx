@@ -27,6 +27,7 @@ import {
   buildProfileDraft,
   deriveApiBaseUrl,
   deriveBrowserPairTarget,
+  requireBrowserSafeHost,
 } from './lib/connection';
 import { parsePairPayload } from './lib/qr';
 import type {
@@ -343,7 +344,8 @@ function PairPage(props: {
 
     try {
       const payload = parsePairPayload(payloadText);
-      const targetHost = browserHost.trim() || deriveBrowserPairTarget(payload.h).suggestedBrowserHost;
+      const fallbackHost = deriveBrowserPairTarget(payload.h).suggestedBrowserHost;
+      const targetHost = requireBrowserSafeHost(browserHost.trim() || fallbackHost);
       const apiBaseUrl = deriveApiBaseUrl(targetHost);
       const pairResult = await pairClient(apiBaseUrl, {
         code: payload.c,
@@ -413,7 +415,7 @@ function PairPage(props: {
               placeholder="bridge-name.your-tailnet.ts.net"
             />
             <p className="mt-1.5 text-xs text-slate-400">
-              prefer the <code>*.ts.net</code> serve host for browser connections.
+              use a browser-trusted https hostname here, usually your <code>*.ts.net</code> serve host.
             </p>
           </label>
 
@@ -437,7 +439,7 @@ function PairPage(props: {
                 host: <code>{parsedPayload.h}</code>
               </p>
               <p className="mt-0.5 break-all">
-                target: <code>{browserHost || deriveBrowserPairTarget(parsedPayload.h).suggestedBrowserHost}</code>
+                target: <code>{browserHost || deriveBrowserPairTarget(parsedPayload.h).suggestedBrowserHost || 'enter your browser-safe host'}</code>
               </p>
             </div>
           ) : null}
@@ -478,7 +480,7 @@ function SessionPage(props: {
     }
 
     let cancelled = false;
-    const apiBaseUrl = deriveApiBaseUrl(host);
+    const apiBaseUrl = deriveApiBaseUrl(requireBrowserSafeHost(host));
     const timer = window.setInterval(() => {
       pollSession(apiBaseUrl, session.session_id)
         .then(async (result) => {
@@ -524,7 +526,7 @@ function SessionPage(props: {
     setError(null);
 
     try {
-      const apiBaseUrl = deriveApiBaseUrl(host);
+      const apiBaseUrl = deriveApiBaseUrl(requireBrowserSafeHost(host));
       const created = await createSession(apiBaseUrl, {
         clientName,
         clientType: 'web',
@@ -555,6 +557,9 @@ function SessionPage(props: {
               onChange={(event) => setHost(event.target.value)}
               placeholder="bridge-name.your-tailnet.ts.net"
             />
+            <p className="mt-1.5 text-xs text-slate-400">
+              use the browser-safe https hostname, not the direct bridge ip or <code>:8443</code>.
+            </p>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-medium text-slate-700">client name</span>
@@ -670,6 +675,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
     () => chats.find((chat) => chat.id === activeChatId) ?? null,
     [activeChatId, chats],
   );
+  const canConnectEvents = Boolean(token) && (status === 'ready' || status === 'refreshing');
 
   useEffect(() => {
     chatsRef.current = chats;
@@ -685,7 +691,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
 
   // websocket
   useEffect(() => {
-    if (!token || (status !== 'ready' && status !== 'refreshing')) {
+    if (!token || !canConnectEvents) {
       setEventsStatus('idle');
       setEventsError(null);
       return;
@@ -695,6 +701,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
     let socket: WebSocket | null = null;
     let reconnectTimer = 0;
     let reconnectDelay = 1000;
+    let lastCloseMessage: string | null = null;
 
     const connect = () => {
       if (cancelled) {
@@ -714,6 +721,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
           return;
         }
         reconnectDelay = 1000;
+        lastCloseMessage = null;
         setEventsStatus('live');
         setEventsError(null);
       };
@@ -742,20 +750,31 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
         if (cancelled) {
           return;
         }
+        lastCloseMessage = 'live updates could not connect. retrying…';
         setEventsStatus('error');
-        setEventsError('live event stream dropped. retrying…');
+        setEventsError(lastCloseMessage);
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         if (cancelled) {
           return;
         }
 
-        setEventsStatus('connecting');
+        const closeMessage = describeEventStreamClose(event, lastCloseMessage);
+        const nextDelay = reconnectDelay;
+
+        setEventsStatus('error');
+        setEventsError(closeMessage);
+
         reconnectTimer = window.setTimeout(() => {
+          if (cancelled) {
+            return;
+          }
           reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+          setEventsStatus('connecting');
+          setEventsError(null);
           connect();
-        }, reconnectDelay);
+        }, nextDelay);
       };
     };
 
@@ -766,7 +785,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
       window.clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, [profile.wsBaseUrl, status, token]);
+  }, [canConnectEvents, profile.wsBaseUrl, token]);
 
   // initial load
   useEffect(() => {
@@ -1020,7 +1039,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
         <div className="toolbar">
           <h1 className="text-sm font-semibold text-slate-900">messages</h1>
           <div className="ml-auto flex items-center gap-2">
-            <StatusDot status={eventsStatus} />
+            <StatusDot status={eventsStatus} detail={eventsError} />
             <Link to="/settings" className="text-slate-400 hover:text-slate-600">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                 <path fillRule="evenodd" d="M7.84 1.804A1 1 0 018.82 1h2.36a1 1 0 01.98.804l.331 1.652a6.993 6.993 0 011.929 1.115l1.598-.54a1 1 0 011.186.447l1.18 2.044a1 1 0 01-.205 1.251l-1.267 1.113a7.047 7.047 0 010 2.228l1.267 1.113a1 1 0 01.206 1.25l-1.18 2.045a1 1 0 01-1.187.447l-1.598-.54a6.993 6.993 0 01-1.929 1.115l-.33 1.652a1 1 0 01-.98.804H8.82a1 1 0 01-.98-.804l-.331-1.652a6.993 6.993 0 01-1.929-1.115l-1.598.54a1 1 0 01-1.186-.447l-1.18-2.044a1 1 0 01.205-1.251l1.267-1.114a7.05 7.05 0 010-2.227L1.821 7.773a1 1 0 01-.206-1.25l1.18-2.045a1 1 0 011.187-.447l1.598.54A6.993 6.993 0 017.51 3.456l.33-1.652zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
@@ -1036,6 +1055,11 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
           status={status}
           onSelectChat={selectChat}
         />
+        {eventsError ? (
+          <div className="border-t border-slate-100 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+            {eventsError}
+          </div>
+        ) : null}
       </div>
 
       {/* thread — hidden on mobile when chat list is shown */}
@@ -1061,6 +1085,7 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
           onBack={() => setMobileShowThread(false)}
           status={threadStatus}
           threadError={threadError}
+          eventsError={eventsError}
           eventsStatus={eventsStatus}
         />
       </div>
@@ -1143,6 +1168,7 @@ function ThreadView(props: {
   threadError: string | null;
   onReload: () => void;
   onBack: () => void;
+  eventsError: string | null;
   eventsStatus: 'idle' | 'connecting' | 'live' | 'error';
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1172,7 +1198,7 @@ function ThreadView(props: {
           {props.activeChat ? displayChatName(props.activeChat) : 'select a chat'}
         </p>
         <div className="ml-auto flex items-center gap-2">
-          <StatusDot status={props.eventsStatus} />
+          <StatusDot status={props.eventsStatus} detail={props.eventsError} />
           <button
             className="rounded-md p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
             disabled={!props.activeChat}
@@ -1188,11 +1214,14 @@ function ThreadView(props: {
       </div>
 
       {/* messages area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-surface px-4 py-3">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,#f4f5f7_0%,#eef1f5_100%)] px-3 py-3 sm:px-4"
+      >
         {props.activeChat && props.canLoadOlder ? (
-          <div className="mb-3 flex justify-center">
+          <div className="mb-4 flex justify-center">
             <button
-              className="rounded-lg bg-white px-3 py-1.5 text-xs text-slate-500 shadow-sm hover:bg-slate-50"
+              className="rounded-full border border-white/80 bg-white/90 px-3 py-1.5 text-[11px] font-medium text-slate-500 shadow-[0_6px_16px_rgba(15,23,42,0.08)] backdrop-blur hover:bg-white"
               disabled={props.loadingOlder}
               onClick={props.onLoadOlder}
               type="button"
@@ -1235,7 +1264,7 @@ function ThreadView(props: {
           </div>
         ) : null}
 
-        <div className="space-y-1">
+        <div className="space-y-2">
           {props.messages.map((message) => (
             <MessageBubble key={message.guid || String(message.id)} message={message} />
           ))}
@@ -1262,36 +1291,40 @@ function MessageBubble({ message }: { message: Message }) {
 
   return (
     <div className={fromMe ? 'flex justify-end' : 'flex justify-start'}>
-      <div className="max-w-[80%]">
+      <div className="max-w-[78%] sm:max-w-[72%]">
         {!fromMe ? (
-          <p className="mb-0.5 px-1 text-[11px] text-slate-400">
+          <p className="mb-1 px-1.5 text-[11px] font-medium text-slate-500">
             {message.sender || 'contact'}
           </p>
         ) : null}
         <div
           className={
             fromMe
-              ? 'rounded-2xl rounded-br-md bg-signal px-3.5 py-2 text-white'
-              : 'rounded-2xl rounded-bl-md bg-white px-3.5 py-2 text-slate-900 shadow-sm'
+              ? 'rounded-[1.4rem] rounded-br-md bg-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_10px_24px_rgba(10,132,255,0.26)]'
+              : 'rounded-[1.4rem] rounded-bl-md border border-slate-300/70 bg-slate-200 px-3.5 py-2.5 text-slate-950 shadow-[0_8px_20px_rgba(15,23,42,0.08)]'
           }
         >
-          {text ? <p className="whitespace-pre-wrap text-sm leading-relaxed">{text}</p> : null}
+          {text ? (
+            <p className="whitespace-pre-wrap text-[15px] leading-[1.35] tracking-[-0.01em]">
+              {text}
+            </p>
+          ) : null}
 
           {!text && attachments.length > 0 ? (
-            <p className={fromMe ? 'text-sm text-white/80' : 'text-sm text-slate-500'}>
+            <p className={fromMe ? 'text-sm text-white/80' : 'text-sm text-slate-700'}>
               attachment-only message
             </p>
           ) : null}
 
           {attachments.length > 0 ? (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {attachments.map((attachment, index) => (
                 <span
                   key={attachment.id || `${message.id}-${index}`}
                   className={
                     fromMe
-                      ? 'rounded-md bg-white/15 px-2 py-0.5 text-[11px] text-white'
-                      : 'rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600'
+                      ? 'rounded-full bg-white/16 px-2.5 py-1 text-[11px] font-medium text-white'
+                      : 'rounded-full bg-white/75 px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-300/70'
                   }
                 >
                   {attachment.filename || 'attachment'}
@@ -1303,14 +1336,16 @@ function MessageBubble({ message }: { message: Message }) {
         </div>
 
         {reactions.length > 0 ? (
-          <p className="mt-0.5 px-1 text-[11px] text-slate-400">
+          <p className="mt-1 px-1.5 text-[11px] text-slate-400">
             {reactions
               .map((reaction) => reaction.emoji || reaction.type || 'reaction')
               .join(' ')}
           </p>
         ) : null}
 
-        <p className={`mt-0.5 px-1 text-[10px] ${fromMe ? 'text-right text-slate-400' : 'text-slate-400'}`}>
+        <p
+          className={`mt-1 px-1.5 text-[10px] ${fromMe ? 'text-right text-slate-400' : 'text-slate-500'}`}
+        >
           {formatMessageTimestamp(message.created_at)}
         </p>
       </div>
@@ -1324,8 +1359,10 @@ function MessageBubble({ message }: { message: Message }) {
 
 function StatusDot({
   status,
+  detail,
 }: {
   status: 'idle' | 'loading' | 'refreshing' | 'ready' | 'error' | 'connecting' | 'live';
+  detail?: string | null;
 }) {
   const dotColor: Record<typeof status, string> = {
     idle: 'bg-slate-300',
@@ -1336,13 +1373,42 @@ function StatusDot({
     live: 'bg-emerald-500',
     error: 'bg-rose-500',
   };
+  const label: Record<typeof status, string> = {
+    idle: 'idle',
+    loading: 'loading',
+    refreshing: 'refreshing',
+    ready: 'ready',
+    connecting: 'connecting',
+    live: 'connected',
+    error: 'updates offline',
+  };
 
   return (
-    <span className="flex items-center gap-1.5" title={status}>
+    <span className="flex items-center gap-1.5" title={detail || label[status]}>
       <span className={`inline-block h-2 w-2 rounded-full ${dotColor[status]}`} />
-      <span className="text-[11px] text-slate-500">{status}</span>
+      <span className="text-[11px] text-slate-500">{label[status]}</span>
     </span>
   );
+}
+
+function describeEventStreamClose(event: CloseEvent, fallback: string | null): string {
+  const reason = event.reason.trim();
+  if (reason) {
+    return `live updates closed: ${reason}`;
+  }
+
+  switch (event.code) {
+    case 1000:
+      return fallback ?? 'live updates disconnected. retrying…';
+    case 1006:
+      return fallback ?? 'live updates could not connect. retrying…';
+    case 1008:
+      return 'live updates were rejected by the server. check the browser host and token.';
+    case 1013:
+      return 'live updates are busy right now. retrying…';
+    default:
+      return fallback ?? `live updates disconnected (code ${event.code}). retrying…`;
+  }
 }
 
 // ---------------------------------------------------------------------------

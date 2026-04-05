@@ -5,6 +5,7 @@ import {
   deriveApiBaseUrl,
   deriveBrowserPairTarget,
   deriveWsBaseUrl,
+  requireBrowserSafeHost,
 } from './connection';
 
 describe('connection helpers', () => {
@@ -40,7 +41,14 @@ describe('connection helpers', () => {
   test('keeps raw bridge host separate from browser host suggestion', () => {
     expect(deriveBrowserPairTarget('bridge-host.internal.example:8443')).toEqual({
       bridgeHost: 'bridge-host.internal.example:8443',
-      suggestedBrowserHost: 'bridge-host.internal.example:8443',
+      suggestedBrowserHost: '',
     });
+  });
+
+  test('requires a browser-safe hostname for web clients', () => {
+    expect(requireBrowserSafeHost('bridge.tail1eca0.ts.net')).toBe('bridge.tail1eca0.ts.net');
+    expect(() => requireBrowserSafeHost('100.64.0.3:8443')).toThrow(
+      /browser-trusted https hostname/i,
+    );
   });
 });
