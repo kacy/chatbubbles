@@ -1,13 +1,30 @@
-import type { ProfileDraft, StoredServerProfile } from './types';
+import type { Chat, Message, ProfileDraft, StoredServerProfile } from './types';
 
 const databaseName = 'imsg-bridge-web';
 const databaseVersion = 1;
 const profilesStore = 'profiles';
 const appStateStore = 'app_state';
+const chatCacheStore = 'chat_cache';
+const messageCacheStore = 'message_cache';
 
 type AppStateRecord = {
   key: string;
   value: string;
+};
+
+type ChatCacheRecord = {
+  id: string;
+  profileId: string;
+  chat: Chat;
+  cachedAt: string;
+};
+
+type MessageCacheRecord = {
+  id: string;
+  profileId: string;
+  chatId: number;
+  messages: Message[];
+  cachedAt: string;
 };
 
 export async function listProfiles(): Promise<StoredServerProfile[]> {
@@ -45,7 +62,10 @@ export async function saveProfile(draft: ProfileDraft): Promise<StoredServerProf
 export async function deleteProfile(id: string): Promise<void> {
   const db = await openDatabase();
   try {
-    const tx = db.transaction([profilesStore, appStateStore], 'readwrite');
+    const tx = db.transaction(
+      [profilesStore, appStateStore, chatCacheStore, messageCacheStore],
+      'readwrite',
+    );
     tx.objectStore(profilesStore).delete(id);
     const appState = tx.objectStore(appStateStore);
     const activeProfile = await request<AppStateRecord | undefined>(
@@ -55,6 +75,11 @@ export async function deleteProfile(id: string): Promise<void> {
       appState.delete('activeProfileId');
     }
     appState.delete(activeChatKey(id));
+    await deleteCachedRecords<ChatCacheRecord>(tx.objectStore(chatCacheStore), (record) => record.profileId === id);
+    await deleteCachedRecords<MessageCacheRecord>(
+      tx.objectStore(messageCacheStore),
+      (record) => record.profileId === id,
+    );
     await transactionDone(tx);
   } finally {
     db.close();
@@ -116,6 +141,78 @@ export async function getActiveChatId(profileId: string): Promise<number | null>
   }
 }
 
+export async function getCachedChats(profileId: string): Promise<Chat[]> {
+  const db = await openDatabase();
+  try {
+    const tx = db.transaction(chatCacheStore, 'readonly');
+    const records = await request<ChatCacheRecord[]>(tx.objectStore(chatCacheStore).getAll());
+    return records
+      .filter((record) => record.profileId === profileId)
+      .map((record) => record.chat);
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveChats(profileId: string, chats: Chat[]): Promise<void> {
+  const db = await openDatabase();
+  try {
+    const tx = db.transaction(chatCacheStore, 'readwrite');
+    const store = tx.objectStore(chatCacheStore);
+    await deleteCachedRecords<ChatCacheRecord>(store, (record) => record.profileId === profileId);
+
+    const cachedAt = new Date().toISOString();
+    for (const chat of chats) {
+      const record: ChatCacheRecord = {
+        id: chatCacheKey(profileId, chat.id),
+        profileId,
+        chat,
+        cachedAt,
+      };
+      store.put(record);
+    }
+
+    await transactionDone(tx);
+  } finally {
+    db.close();
+  }
+}
+
+export async function getCachedMessages(profileId: string, chatId: number): Promise<Message[]> {
+  const db = await openDatabase();
+  try {
+    const tx = db.transaction(messageCacheStore, 'readonly');
+    const record = await request<MessageCacheRecord | undefined>(
+      tx.objectStore(messageCacheStore).get(messageCacheKey(profileId, chatId)),
+    );
+    return record?.messages ?? [];
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveMessages(
+  profileId: string,
+  chatId: number,
+  messages: Message[],
+): Promise<void> {
+  const db = await openDatabase();
+  try {
+    const tx = db.transaction(messageCacheStore, 'readwrite');
+    const record: MessageCacheRecord = {
+      id: messageCacheKey(profileId, chatId),
+      profileId,
+      chatId,
+      messages,
+      cachedAt: new Date().toISOString(),
+    };
+    tx.objectStore(messageCacheStore).put(record);
+    await transactionDone(tx);
+  } finally {
+    db.close();
+  }
+}
+
 async function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(databaseName, databaseVersion);
@@ -128,11 +225,11 @@ async function openDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(appStateStore)) {
         db.createObjectStore(appStateStore, { keyPath: 'key' });
       }
-      if (!db.objectStoreNames.contains('chat_cache')) {
-        db.createObjectStore('chat_cache', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(chatCacheStore)) {
+        db.createObjectStore(chatCacheStore, { keyPath: 'id' });
       }
-      if (!db.objectStoreNames.contains('message_cache')) {
-        db.createObjectStore('message_cache', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(messageCacheStore)) {
+        db.createObjectStore(messageCacheStore, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains('attachment_cache')) {
         db.createObjectStore('attachment_cache', { keyPath: 'id' });
@@ -161,4 +258,24 @@ function transactionDone(tx: IDBTransaction): Promise<void> {
 
 function activeChatKey(profileId: string): string {
   return `activeChat:${profileId}`;
+}
+
+function chatCacheKey(profileId: string, chatId: number): string {
+  return `${profileId}:chat:${chatId}`;
+}
+
+function messageCacheKey(profileId: string, chatId: number): string {
+  return `${profileId}:messages:${chatId}`;
+}
+
+async function deleteCachedRecords<T extends { id: string }>(
+  store: IDBObjectStore,
+  predicate: (record: T) => boolean,
+): Promise<void> {
+  const records = await request<T[]>(store.getAll());
+  for (const record of records) {
+    if (predicate(record)) {
+      store.delete(record.id);
+    }
+  }
 }

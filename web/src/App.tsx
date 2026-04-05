@@ -12,9 +12,13 @@ import {
 import { decryptString, encryptString } from './lib/crypto';
 import {
   deleteProfile,
+  getCachedChats,
+  getCachedMessages,
   getActiveChatId,
   getActiveProfileId,
   listProfiles,
+  saveChats,
+  saveMessages,
   saveProfile,
   setActiveChat,
   setActiveProfile,
@@ -653,17 +657,36 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
 
       try {
         const decryptedToken = await decryptString(profile.token);
-        const [server, loadedChats, savedActiveChatId] = await Promise.all([
-          fetchServerInfo(profile.apiBaseUrl, decryptedToken),
-          listChats(profile.apiBaseUrl, decryptedToken),
+        setToken(decryptedToken);
+
+        const [cachedChats, savedActiveChatId] = await Promise.all([
+          getCachedChats(profile.id),
           getActiveChatId(profile.id),
         ]);
 
+        let bootChatId: number | null = null;
+        const sortedCachedChats = sortChats(cachedChats);
+        if (!cancelled && sortedCachedChats.length > 0) {
+          const initialCachedChat =
+            sortedCachedChats.find((chat) => chat.id === savedActiveChatId) ?? sortedCachedChats[0];
+          bootChatId = initialCachedChat.id;
+          setChats(sortedCachedChats);
+          setActiveChatId(initialCachedChat.id);
+          void loadMessagesForChat(initialCachedChat.id, decryptedToken, false);
+        }
+
+        const [server, loadedChats] = await Promise.all([
+          fetchServerInfo(profile.apiBaseUrl, decryptedToken),
+          listChats(profile.apiBaseUrl, decryptedToken),
+        ]);
+
         if (!cancelled) {
-          setToken(decryptedToken);
           setServerInfo(server);
           const sortedChats = sortChats(loadedChats);
           setChats(sortedChats);
+          void saveChats(profile.id, sortedChats).catch((cacheError) => {
+            console.error('failed to cache chats', cacheError);
+          });
           setStatus('ready');
 
           if (sortedChats.length === 0) {
@@ -674,11 +697,12 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
           }
 
           const initialChat =
-            sortedChats.find((chat) => chat.id === savedActiveChatId) ?? sortedChats[0];
+            sortedChats.find((chat) => chat.id === (bootChatId ?? savedActiveChatId)) ?? sortedChats[0];
 
           setActiveChatId(initialChat.id);
-          setThreadStatus('loading');
-          void loadMessagesForChat(initialChat.id, decryptedToken);
+          if (bootChatId === null || bootChatId !== initialChat.id) {
+            void loadMessagesForChat(initialChat.id, decryptedToken, false);
+          }
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -712,8 +736,24 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
     }
 
     const requestId = ++activeThreadRequest.current;
-    setThreadStatus('loading');
     setThreadError(null);
+    setActiveChatId(chatId);
+
+    if (persistSelection) {
+      await setActiveChat(profile.id, chatId);
+    }
+
+    const cachedMessages = await getCachedMessages(profile.id, chatId);
+    if (requestId !== activeThreadRequest.current) {
+      return;
+    }
+
+    if (cachedMessages.length > 0) {
+      setMessages(sortMessages(cachedMessages));
+    } else {
+      setMessages([]);
+    }
+    setThreadStatus('loading');
 
     try {
       const loadedMessages = await listMessages(profile.apiBaseUrl, activeToken, chatId);
@@ -721,15 +761,24 @@ function AppShell({ profile }: { profile: StoredServerProfile }) {
         return;
       }
 
-      setMessages(sortMessages(loadedMessages));
-      setActiveChatId(chatId);
+      const sortedMessages = sortMessages(loadedMessages);
+      setMessages(sortedMessages);
       setThreadStatus('ready');
-
-      if (persistSelection) {
-        await setActiveChat(profile.id, chatId);
-      }
+      void saveMessages(profile.id, chatId, sortedMessages).catch((cacheError) => {
+        console.error('failed to cache messages', cacheError);
+      });
     } catch (loadError) {
       if (requestId !== activeThreadRequest.current) {
+        return;
+      }
+
+      if (cachedMessages.length > 0) {
+        setThreadStatus('ready');
+        setThreadError(
+          loadError instanceof Error
+            ? `${loadError.message}. showing cached history.`
+            : 'could not refresh this conversation. showing cached history.',
+        );
         return;
       }
 
@@ -960,6 +1009,12 @@ function ThreadView(props: {
         {props.status === 'ready' && props.messages.length === 0 ? (
           <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500">
             this conversation is reachable, but there are no messages in the current result set.
+          </div>
+        ) : null}
+
+        {props.status === 'ready' && props.threadError ? (
+          <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {props.threadError}
           </div>
         ) : null}
 
