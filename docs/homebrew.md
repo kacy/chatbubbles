@@ -40,29 +40,35 @@ Formula/chatbubbles.rb
    - `chatbubbles_<version>_darwin_arm64.tar.gz`
    - `chatbubbles_<version>_darwin_amd64.tar.gz`
    - `checksums.txt`
-3. copy the two sha256 values from `checksums.txt`
-4. render the new formula from this repo:
+3. render the new formula from this repo:
 
 ```sh
-make homebrew-formula ARM64_SHA=<arm64-sha256> AMD64_SHA=<amd64-sha256>
+make homebrew-formula VERSION=0.1.3
 ```
 
 or:
 
 ```sh
-./scripts/render-homebrew-formula.sh "$(cat VERSION)" <arm64-sha256> <amd64-sha256>
+./scripts/render-homebrew-formula.sh 0.1.3
 ```
 
-5. paste the output into `Formula/chatbubbles.rb` in the tap repo
-6. run the usual brew checks in the tap repo:
+that command pulls the published `checksums.txt` from the github release, so it matches the real release artifacts instead of a local rebuild.
+
+if you ever need to override the checksums by hand, the helper still supports:
+
+```sh
+./scripts/render-homebrew-formula.sh 0.1.3 <arm64-sha256> <amd64-sha256>
+```
+
+4. paste the output into `Formula/chatbubbles.rb` in the tap repo
+5. run the usual brew checks in the tap repo:
 
 ```sh
 brew style Formula/chatbubbles.rb
-brew audit --strict --online Formula/chatbubbles.rb
-brew install --build-from-source Formula/chatbubbles.rb
+brew install --formula ./Formula/chatbubbles.rb
 ```
 
-7. commit and push the tap update
+6. commit and push the tap update
 
 ## install shape
 

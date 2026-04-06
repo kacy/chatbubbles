@@ -6,10 +6,17 @@ repo_root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 
 repo="${HOMEBREW_GITHUB_REPO:-kacy/chatbubbles}"
+current_version="$(tr -d '\n' < VERSION)"
 
 case "$#" in
+	0)
+		version="$current_version"
+		;;
+	1)
+		version="$1"
+		;;
 	2)
-		version="$(tr -d '\n' < VERSION)"
+		version="$current_version"
 		arm64_sha="$1"
 		amd64_sha="$2"
 		;;
@@ -19,8 +26,11 @@ case "$#" in
 		amd64_sha="$3"
 		;;
 	*)
-	echo "usage: scripts/render-homebrew-formula.sh [version] <arm64-sha256> <amd64-sha256>" >&2
-	echo "example: scripts/render-homebrew-formula.sh 0.1.3 <arm64-sha> <amd64-sha>" >&2
+	echo "usage: scripts/render-homebrew-formula.sh [version [<arm64-sha256> <amd64-sha256>]]" >&2
+	echo "examples:" >&2
+	echo "  scripts/render-homebrew-formula.sh" >&2
+	echo "  scripts/render-homebrew-formula.sh 0.1.3" >&2
+	echo "  scripts/render-homebrew-formula.sh 0.1.3 <arm64-sha> <amd64-sha>" >&2
 	exit 1
 		;;
 esac
@@ -29,6 +39,17 @@ release_tag="v$version"
 release_base_url="https://github.com/$repo/releases/download/$release_tag"
 arm64_url="$release_base_url/chatbubbles_${version}_darwin_arm64.tar.gz"
 amd64_url="$release_base_url/chatbubbles_${version}_darwin_amd64.tar.gz"
+
+if [ "${arm64_sha:-}" = "" ] || [ "${amd64_sha:-}" = "" ]; then
+	checksums="$(curl -fsSL "$release_base_url/checksums.txt")"
+	arm64_sha="$(printf '%s\n' "$checksums" | awk '/darwin_arm64.tar.gz/ {print $1}')"
+	amd64_sha="$(printf '%s\n' "$checksums" | awk '/darwin_amd64.tar.gz/ {print $1}')"
+fi
+
+if [ -z "${arm64_sha:-}" ] || [ -z "${amd64_sha:-}" ]; then
+	echo "could not resolve release checksums for $release_tag" >&2
+	exit 1
+fi
 
 cat <<EOF
 class Chatbubbles < Formula

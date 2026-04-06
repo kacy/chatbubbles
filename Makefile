@@ -54,8 +54,8 @@ web-test:
 	cd web && npm test
 
 homebrew-formula:
-	@if [ -z "$(ARM64_SHA)" ] || [ -z "$(AMD64_SHA)" ]; then \
-		echo "usage: make homebrew-formula ARM64_SHA=<arm64-sha256> AMD64_SHA=<amd64-sha256> [VERSION=x.y.z]"; \
-		exit 1; \
+	@if [ -n "$(ARM64_SHA)" ] && [ -n "$(AMD64_SHA)" ]; then \
+		sh ./scripts/render-homebrew-formula.sh "$(VERSION)" "$(ARM64_SHA)" "$(AMD64_SHA)"; \
+	else \
+		sh ./scripts/render-homebrew-formula.sh "$(VERSION)"; \
 	fi
-	sh ./scripts/render-homebrew-formula.sh "$(VERSION)" "$(ARM64_SHA)" "$(AMD64_SHA)"
